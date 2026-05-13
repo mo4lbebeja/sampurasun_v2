@@ -9,7 +9,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================== */
-/* EV-PENGADAAN — TYPOGRAPHY (sesuai mockup)       */
+/* SAMPURASUN — TYPOGRAPHY (sesuai mockup)       */
 /* ============================================== */
 
 @theme inline {
@@ -56,7 +56,7 @@
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
 
-    /* ===== Brand palette EV-Pengadaan (PERSIS dari mockup) ===== */
+    /* ===== Brand palette Sampurasun (PERSIS dari mockup) ===== */
     --color-bg-cream: #f7f3ec;
     --color-bg-cream-dark: #ede7da;
     --color-surface: #ffffff;

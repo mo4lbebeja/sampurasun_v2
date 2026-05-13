@@ -56,11 +56,11 @@ withDefaults(
                     <div
                         class="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-bg-cream)] font-display text-2xl font-bold text-primary"
                     >
-                        EV
+                        S
                     </div>
                     <div>
-                        <div class="font-display text-xl font-semibold">EV-Pengadaan</div>
-                        <div class="text-xs opacity-75">Sistem Pengadaan Terpadu</div>
+                        <div class="font-display text-xl font-semibold">Sampurasun</div>
+                        <div class="text-xs opacity-75">Sistem Administrasi Manajemen Perencanaan tur Realisasi Anggaran nu Nyata</div>
                     </div>
                 </div>
 
@@ -71,7 +71,7 @@ withDefaults(
                     </h1>
                     <p class="max-w-md text-base opacity-90">
                         Dari usulan hingga evaluasi — pantau setiap tahap pengadaan barang dan jasa
-                        di instansi Anda dalam satu sistem.
+                         dalam satu sistem.
                     </p>
 
                     <!-- Stats -->
@@ -114,7 +114,7 @@ withDefaults(
 
                 <!-- Footer -->
                 <div class="text-xs opacity-60">
-                    © {{ new Date().getFullYear() }} EV-Pengadaan · SijaluCom
+                    © {{ new Date().getFullYear() }} Sampurasun · SijaluCom
                 </div>
             </div>
         </div>
@@ -132,7 +132,7 @@ withDefaults(
                         EV
                     </div>
                     <div class="font-display text-lg font-semibold text-primary">
-                        EV-Pengadaan
+                        Sampurasun
                     </div>
                 </div>
 

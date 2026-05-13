@@ -10,7 +10,7 @@ export interface User {
     created_at: string;
     updated_at: string;
 
-    // EV-Pengadaan fields
+    // Sampurasun fields
     nip?: string | null;
     jabatan?: string | null;
     role?: string | null;

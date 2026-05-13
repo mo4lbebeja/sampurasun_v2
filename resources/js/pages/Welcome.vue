@@ -13,7 +13,7 @@ withDefaults(
 </script>
 
 <template>
-    <Head title="EVPengadaan" />
+    <Head title="Sampurasun" />
 
     <div
         class="relative flex min-h-screen flex-col overflow-hidden bg-slate-50 text-slate-800"
@@ -29,7 +29,7 @@ withDefaults(
         >
             <div>
                 <h1 class="text-xl font-bold tracking-tight text-indigo-600">
-                    EVPengadaan
+                    SAMPURASUN
                 </h1>
 
                 <p class="text-xs text-slate-500">
@@ -207,7 +207,7 @@ withDefaults(
         <footer
             class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500"
         >
-            © 2026 EVPengadaan, SijaluCom
+            © 2026 sampurasun, SijaluCom
         </footer>
     </div>
 </template>
