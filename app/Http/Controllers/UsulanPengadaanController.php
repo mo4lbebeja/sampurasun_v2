@@ -10,6 +10,9 @@ use App\Services\DocumentNumberService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Notifications\UsulanBaruNotification;
+use App\Services\ActivityLogger;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -94,70 +97,88 @@ class UsulanPengadaanController extends Controller
         ]);
     }
 
-public function store(StoreUsulanRequest $request, DocumentNumberService $numberService): RedirectResponse
-{
-    $usulan = DB::transaction(function () use ($request, $numberService) {
-        $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
-        $noUsulan = $numberService->generateInsideTransaction(
-            type: 'usulan',
-            prefix: 'USL',
-            tahunAnggaran: $tahunAnggaran,
-        );
-
-        // Hitung total estimasi
-        $totalEstimasi = collect($request->validated('items'))
-            ->sum(fn ($i) => $i['jumlah'] * $i['harga_satuan_estimasi']);
-
-        $anggaran = Anggaran::query()
-            ->whereKey($request->validated('anggaran_id'))
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        if ($totalEstimasi > (float) $anggaran->sisa) {
-            return back()
-                ->withErrors([
-                    'items' => sprintf(
-                        'Total estimasi Rp %s melebihi sisa anggaran Rp %s.',
-                        number_format($totalEstimasi, 0, ',', '.'),
-                        number_format((float) $anggaran->sisa, 0, ',', '.'),
-                    ),
-                ])
-                ->withInput();
-        }
-
-        $usulan = UsulanPengadaan::create([
-            'no_usulan' => $noUsulan,
-            'pemohon_id' => $request->user()->id,
-            'anggaran_id' => $request->validated('anggaran_id'),
-            'tanggal_usulan' => now(),
-            'judul' => $request->validated('judul'),
-            'latar_belakang' => $request->validated('latar_belakang'),
-            'keterangan' => $request->validated('keterangan'),
-            'total_estimasi' => $totalEstimasi,
-            'status' => 'diajukan',
-            'submitted_at' => now(),
-        ]);
-
-        foreach ($request->validated('items') as $item) {
-            $usulan->items()->create([
-                'kategori_id' => $item['kategori_id'],
-                'nama_barang' => $item['nama_barang'],
-                'spesifikasi' => $item['spesifikasi'] ?? null,
-                'satuan' => $item['satuan'],
-                'jumlah' => $item['jumlah'],
-                'harga_satuan_estimasi' => $item['harga_satuan_estimasi'],
-                'subtotal' => $item['jumlah'] * $item['harga_satuan_estimasi'],
+    public function store(StoreUsulanRequest $request, DocumentNumberService $numberService): RedirectResponse
+    {
+        $usulan = DB::transaction(function () use ($request, $numberService) {
+            $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
+ 
+            $noUsulan = $numberService->generateInsideTransaction(
+                type: 'usulan',
+                prefix: 'USL',
+                tahunAnggaran: $tahunAnggaran,
+            );
+ 
+            $totalEstimasi = collect($request->validated('items'))
+                ->sum(fn ($i) => $i['jumlah'] * $i['harga_satuan_estimasi']);
+ 
+            $anggaran = Anggaran::query()
+                ->whereKey($request->validated('anggaran_id'))
+                ->lockForUpdate()
+                ->firstOrFail();
+ 
+            if ($totalEstimasi > (float) $anggaran->sisa) {
+                return back()
+                    ->withErrors([
+                        'items' => sprintf(
+                            'Total estimasi Rp %s melebihi sisa anggaran Rp %s.',
+                            number_format($totalEstimasi, 0, ',', '.'),
+                            number_format((float) $anggaran->sisa, 0, ',', '.'),
+                        ),
+                    ])
+                    ->withInput();
+            }
+ 
+            $usulan = UsulanPengadaan::create([
+                'no_usulan'    => $noUsulan,
+                'pemohon_id'   => $request->user()->id,
+                'anggaran_id'  => $request->validated('anggaran_id'),
+                'tanggal_usulan' => now(),
+                'judul'        => $request->validated('judul'),
+                'latar_belakang' => $request->validated('latar_belakang'),
+                'keterangan'   => $request->validated('keterangan'),
+                'total_estimasi' => $totalEstimasi,
+                'status'       => 'diajukan',
+                'submitted_at' => now(),
             ]);
-        }
-
-        return $usulan;
-    }, 5);
-
-    return redirect()
-        ->route('usulan.index')
-        ->with('success', "Usulan {$usulan->no_usulan} berhasil diajukan.");
-}
+ 
+            foreach ($request->validated('items') as $item) {
+                $usulan->items()->create([
+                    'kategori_id'          => $item['kategori_id'],
+                    'nama_barang'          => $item['nama_barang'],
+                    'spesifikasi'          => $item['spesifikasi'] ?? null,
+                    'satuan'               => $item['satuan'],
+                    'jumlah'               => $item['jumlah'],
+                    'harga_satuan_estimasi' => $item['harga_satuan_estimasi'],
+                    'subtotal'             => $item['jumlah'] * $item['harga_satuan_estimasi'],
+                ]);
+            }
+ 
+            return $usulan;
+        }, 5);
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'usulan.submit',
+            description: "Usulan {$usulan->no_usulan} diajukan: {$usulan->judul}",
+            usulanId:    $usulan->id,
+            subjectType: 'UsulanPengadaan',
+            subjectId:   $usulan->id,
+        );
+ 
+        // ── Notifikasi ke semua PPTK ─────────────────────────────────
+        $pptk = \App\Models\User::query()
+            ->whereHas('role', fn ($q) => $q->where('name', 'pptk'))
+            ->where('is_active', true)
+            ->get();
+ 
+        Notification::send($pptk, new UsulanBaruNotification($usulan));
+        // ─────────────────────────────────────────────────────────────
+ 
+        return redirect()
+            ->route('usulan.index')
+            ->with('success', "Usulan {$usulan->no_usulan} berhasil diajukan.");
+    }
 
     public function show(UsulanPengadaan $usulan): Response
     {

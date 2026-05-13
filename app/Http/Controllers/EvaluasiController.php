@@ -8,6 +8,7 @@ use App\Models\Pengadaan;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -105,39 +106,53 @@ class EvaluasiController extends Controller
     public function store(StoreEvaluasiRequest $request, Pengadaan $pengadaan): RedirectResponse
     {
         $pengadaan->load('usulan', 'evaluasi');
-
+ 
         if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'evaluasi') {
             return back()->with('error', 'Pengadaan ini tidak dalam tahap evaluasi.');
         }
-
+ 
         if ($pengadaan->evaluasi) {
             return back()->with('error', 'Evaluasi sudah pernah disimpan.');
         }
-
+ 
         $data = $request->validated();
-
-        // Auto-calc nilai rata-rata
+ 
         $data['nilai_rata_rata'] = round(
             ($data['nilai_kinerja_penyedia']
-            + $data['ketepatan_waktu']
-            + $data['kesesuaian_spesifikasi']
-            + $data['kualitas_barang']) / 4,
+                + $data['ketepatan_waktu']
+                + $data['kesesuaian_spesifikasi']
+                + $data['kualitas_barang']) / 4,
             2
         );
-
-        // Handle file upload
+ 
         if ($request->hasFile('file_laporan')) {
-            $data['file_laporan'] = $request->file('file_laporan')->store('evaluasi/laporan', 'public');
+            $data['file_laporan'] = $request->file('file_laporan')
+                ->store('evaluasi/laporan', 'public');
         }
-
+ 
         $data['evaluator_id'] = $request->user()->id;
         $data['pengadaan_id'] = $pengadaan->id;
-
+ 
         DB::transaction(function () use ($pengadaan, $data) {
             Evaluasi::create($data);
             $pengadaan->usulan->update(['status' => 'selesai']);
         });
-
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'evaluasi.submit',
+            description: "Evaluasi pengadaan {$pengadaan->no_pengadaan} selesai, status menjadi selesai",
+            usulanId:    $pengadaan->usulan?->id,
+            subjectType: 'Pengadaan',
+            subjectId:   $pengadaan->id,
+            properties:  [
+                'nilai_rata_rata' => $data['nilai_rata_rata'],
+                'rekomendasi'     => $data['rekomendasi'],
+            ],
+        );
+        // ─────────────────────────────────────────────────────────────
+ 
         return redirect()
             ->route('evaluasi.index')
             ->with('success', "Evaluasi {$pengadaan->no_pengadaan} berhasil disimpan. Pengadaan kini berstatus selesai.");

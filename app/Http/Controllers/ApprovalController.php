@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\DecideUsulanRequest;
 use App\Models\UsulanPengadaan;
+use App\Notifications\UsulanDisetujuiNotification;   // ← tambahkan
+use App\Services\ActivityLogger;                      // ← tambahkan
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;         // ← tambahkan
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -55,48 +58,81 @@ class ApprovalController extends Controller
             'anggaran.subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
             'anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
         ]);
-
+ 
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
+ 
         $sesuaiTahun = (int) $usulan->anggaran?->tahun === $tahunAnggaran
             || (int) $usulan->anggaran?->subKegiatan?->dpaAnggaran?->tahun_anggaran === $tahunAnggaran;
-
+ 
         abort_unless($sesuaiTahun, 403);
-
-        // Hanya usulan dengan status 'diajukan' yang bisa di-decide
+ 
         if ($usulan->status !== 'diajukan') {
             return back()->withErrors([
                 'keputusan' => 'Usulan ini sudah tidak bisa diproses.',
             ]);
         }
-
+ 
         DB::transaction(function () use ($request, $usulan) {
-            // Catat approval
             $usulan->approvals()->create([
-                'approver_id' => $request->user()->id,
-                'keputusan' => $request->validated('keputusan'),
-                'catatan' => $request->validated('catatan'),
+                'approver_id'      => $request->user()->id,
+                'keputusan'        => $request->validated('keputusan'),
+                'catatan'          => $request->validated('catatan'),
                 'tanggal_keputusan' => now(),
             ]);
-
-            // Update status usulan berdasarkan keputusan
+ 
             $newStatus = match ($request->validated('keputusan')) {
                 'disetujui' => 'disetujui',
-                'ditolak' => 'ditolak',
-                'revisi' => 'draft',
+                'ditolak'   => 'ditolak',
+                'revisi'    => 'draft',
             };
-
+ 
             $usulan->update(['status' => $newStatus]);
         });
-
+ 
+        $keputusan = $request->validated('keputusan');
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        $actionMap = [
+            'disetujui' => 'approval.approve',
+            'ditolak'   => 'approval.reject',
+            'revisi'    => 'approval.revise',
+        ];
+ 
+        $descMap = [
+            'disetujui' => "Usulan {$usulan->no_usulan} disetujui oleh {$request->user()->name}",
+            'ditolak'   => "Usulan {$usulan->no_usulan} ditolak oleh {$request->user()->name}",
+            'revisi'    => "Usulan {$usulan->no_usulan} diminta revisi oleh {$request->user()->name}",
+        ];
+ 
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      $actionMap[$keputusan],
+            description: $descMap[$keputusan],
+            usulanId:    $usulan->id,
+            subjectType: 'UsulanPengadaan',
+            subjectId:   $usulan->id,
+            properties:  ['catatan' => $request->validated('catatan')],
+        );
+ 
+        // ── Notifikasi ke Pejabat Pengadaan (hanya saat disetujui) ───
+        if ($keputusan === 'disetujui') {
+            $pejabatPengadaan = \App\Models\User::query()
+                ->whereHas('role', fn ($q) => $q->where('name', 'pejabat_pengadaan'))
+                ->where('is_active', true)
+                ->get();
+ 
+            Notification::send($pejabatPengadaan, new UsulanDisetujuiNotification($usulan));
+        }
+        // ─────────────────────────────────────────────────────────────
+ 
         $msgMap = [
             'disetujui' => "Usulan {$usulan->no_usulan} berhasil disetujui.",
-            'ditolak' => "Usulan {$usulan->no_usulan} ditolak.",
-            'revisi' => "Permintaan revisi dikirim untuk usulan {$usulan->no_usulan}.",
+            'ditolak'   => "Usulan {$usulan->no_usulan} ditolak.",
+            'revisi'    => "Permintaan revisi dikirim untuk usulan {$usulan->no_usulan}.",
         ];
-
+ 
         return redirect()
             ->route('usulan.show', $usulan)
-            ->with('success', $msgMap[$request->validated('keputusan')]);
+            ->with('success', $msgMap[$keputusan]);
     }
 }

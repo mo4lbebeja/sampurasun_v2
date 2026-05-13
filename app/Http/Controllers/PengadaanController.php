@@ -11,6 +11,9 @@ use App\Services\DocumentNumberService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Notifications\UsulanBaruNotification;
+use App\Services\ActivityLogger;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -81,43 +84,53 @@ class PengadaanController extends Controller
         if ($usulan->status !== 'disetujui') {
             return back()->with('error', 'Usulan ini tidak dalam status disetujui.');
         }
-
-        // Cek pengadaan existing
+ 
         $existing = $usulan->pengadaan;
-
+ 
         if ($existing && $existing->status !== 'batal') {
             return back()->with('error', 'Usulan ini sudah ada record pengadaan aktif.');
         }
-
+ 
         $pengadaan = DB::transaction(function () use ($request, $usulan, $existing, $numberService) {
-            // Hapus pengadaan lama yang sudah dibatalkan
             if ($existing) {
                 $existing->delete();
             }
-
+ 
             $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
+ 
             $noPengadaan = $numberService->generateInsideTransaction(
                 type: 'pengadaan',
                 prefix: 'PGD',
                 tahunAnggaran: $tahunAnggaran,
             );
-
+ 
             $pengadaan = Pengadaan::create([
-                'usulan_id' => $usulan->id,
-                'pejabat_id' => $request->user()->id,
+                'usulan_id'    => $usulan->id,
+                'pejabat_id'   => $request->user()->id,
                 'no_pengadaan' => $noPengadaan,
-                'metode' => $request->validated('metode'),
+                'metode'       => $request->validated('metode'),
                 'tanggal_mulai' => $request->validated('tanggal_mulai'),
-                'catatan' => $request->validated('catatan'),
-                'status' => 'proses',
+                'catatan'      => $request->validated('catatan'),
+                'status'       => 'proses',
             ]);
-
+ 
             $usulan->update(['status' => 'dalam_pengadaan']);
-
+ 
             return $pengadaan;
         }, 5);
-
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'pengadaan.start',
+            description: "Pengadaan {$pengadaan->no_pengadaan} dimulai untuk usulan {$usulan->no_usulan}",
+            usulanId:    $usulan->id,
+            subjectType: 'Pengadaan',
+            subjectId:   $pengadaan->id,
+            properties:  ['metode' => $pengadaan->metode],
+        );
+        // ─────────────────────────────────────────────────────────────
+ 
         return redirect()
             ->route('pengadaan.show', $pengadaan)
             ->with('success', "Pengadaan {$pengadaan->no_pengadaan} berhasil dimulai.");
@@ -204,6 +217,9 @@ public function show(Pengadaan $pengadaan): Response
     /**
      * Update kontrak — final step yang memindahkan ke UPBJ.
      */
+    // =========================================================
+    // method updateKontrak()
+    // =========================================================
     public function updateKontrak(Request $request, Pengadaan $pengadaan)
     {
         if ($pengadaan->status === 'selesai' || $pengadaan->status === 'batal') {
@@ -211,63 +227,85 @@ public function show(Pengadaan $pengadaan): Response
                 'pengadaan' => 'Dokumen kontrak tidak dapat diubah pada status ini.',
             ]);
         }
-
+ 
         if ($pengadaan->status === 'proses') {
             $validated = $request->validate([
-                'penyedia_id' => ['required', 'exists:penyedia,id'],
+                'penyedia_id'             => ['required', 'exists:penyedia,id'],
                 'pejabat_penandatangan_id' => ['nullable', 'exists:users,id'],
-                'kpa_penandatangan_id' => ['nullable', 'exists:users,id'],
-                'no_kontrak' => ['required', 'string', 'max:255'],
-                'tanggal_kontrak' => ['required', 'date'],
-                'tanggal_selesai' => ['required', 'date', 'after_or_equal:tanggal_kontrak'],
-                'nilai_kontrak' => ['required', 'numeric', 'min:0'],
-                'catatan' => ['nullable', 'string'],
-                'file_kontrak' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
-                'file_hps' => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+                'kpa_penandatangan_id'    => ['nullable', 'exists:users,id'],
+                'no_kontrak'              => ['required', 'string', 'max:255'],
+                'tanggal_kontrak'         => ['required', 'date'],
+                'tanggal_selesai'         => ['required', 'date', 'after_or_equal:tanggal_kontrak'],
+                'nilai_kontrak'           => ['required', 'numeric', 'min:0'],
+                'catatan'                 => ['nullable', 'string'],
+                'file_kontrak'            => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
+                'file_hps'                => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
             ]);
-
+ 
             $data = [
-                'penyedia_id' => $validated['penyedia_id'],
+                'penyedia_id'             => $validated['penyedia_id'],
                 'pejabat_penandatangan_id' => $validated['pejabat_penandatangan_id'] ?? null,
-                'kpa_penandatangan_id' => $validated['kpa_penandatangan_id'] ?? null,
-                'no_kontrak' => $validated['no_kontrak'],
-                'tanggal_kontrak' => $validated['tanggal_kontrak'],
-                'tanggal_selesai' => $validated['tanggal_selesai'],
-                'nilai_kontrak' => $validated['nilai_kontrak'],
-                'catatan' => $validated['catatan'] ?? null,
-                'status' => 'kontrak',
+                'kpa_penandatangan_id'    => $validated['kpa_penandatangan_id'] ?? null,
+                'no_kontrak'              => $validated['no_kontrak'],
+                'tanggal_kontrak'         => $validated['tanggal_kontrak'],
+                'tanggal_selesai'         => $validated['tanggal_selesai'],
+                'nilai_kontrak'           => $validated['nilai_kontrak'],
+                'catatan'                 => $validated['catatan'] ?? null,
+                'status'                  => 'kontrak',
             ];
         } else {
             $validated = $request->validate([
                 'file_kontrak' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
-                'file_hps' => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+                'file_hps'     => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
             ]);
-
+ 
             $data = [];
         }
-
+ 
         if ($request->hasFile('file_kontrak')) {
             $data['file_kontrak'] = $request->file('file_kontrak')
                 ->store('pengadaan/kontrak', 'public');
         }
-
+ 
         if ($request->hasFile('file_hps')) {
             $data['file_hps'] = $request->file('file_hps')
                 ->store('pengadaan/hps', 'public');
         }
-
+ 
         if (empty($data)) {
             return back()->with('info', 'Tidak ada dokumen yang diupload.');
         }
-
+ 
         $pengadaan->update($data);
-
+ 
         if ($pengadaan->wasChanged('status') && $pengadaan->status === 'kontrak') {
-            $pengadaan->usulan?->update([
-                'status' => 'dokumen',
-            ]);
+            // ── ActivityLogger ───────────────────────────────────────
+            ActivityLogger::fromRequest(
+                request:     $request,
+                action:      'pengadaan.kontrak',
+                description: "Kontrak {$pengadaan->no_kontrak} disimpan untuk pengadaan {$pengadaan->no_pengadaan}",
+                usulanId:    $pengadaan->usulan?->id,
+                subjectType: 'Pengadaan',
+                subjectId:   $pengadaan->id,
+                properties:  [
+                    'no_kontrak'    => $pengadaan->no_kontrak,
+                    'nilai_kontrak' => $pengadaan->nilai_kontrak,
+                    'penyedia_id'   => $pengadaan->penyedia_id,
+                ],
+            );
+ 
+            // ── Notifikasi ke semua UPBJ ─────────────────────────────
+            $upbj = \App\Models\User::query()
+                ->whereHas('role', fn ($q) => $q->where('name', 'upbj'))
+                ->where('is_active', true)
+                ->get();
+ 
+            Notification::send($upbj, new PengadaanKontrakNotification($pengadaan));
+            // ────────────────────────────────────────────────────────
+ 
+            $pengadaan->usulan?->update(['status' => 'dokumen']);
         }
-
+ 
         return redirect()
             ->route('pengadaan.show', $pengadaan)
             ->with('success', $pengadaan->status === 'kontrak'
@@ -278,17 +316,28 @@ public function show(Pengadaan $pengadaan): Response
     /**
      * Batalkan pengadaan (kembalikan ke status disetujui).
      */
-    public function cancel(Pengadaan $pengadaan): RedirectResponse
+    public function cancel(Request $request, Pengadaan $pengadaan): RedirectResponse
     {
         if (! in_array($pengadaan->status, ['proses'])) {
             return back()->with('error', 'Pengadaan dalam status ini tidak bisa dibatalkan.');
         }
-
+ 
         DB::transaction(function () use ($pengadaan) {
             $pengadaan->update(['status' => 'batal']);
             $pengadaan->usulan->update(['status' => 'disetujui']);
         });
-
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'pengadaan.cancel',
+            description: "Pengadaan {$pengadaan->no_pengadaan} dibatalkan",
+            usulanId:    $pengadaan->usulan?->id,
+            subjectType: 'Pengadaan',
+            subjectId:   $pengadaan->id,
+        );
+        // ─────────────────────────────────────────────────────────────
+ 
         return redirect()
             ->route('pengadaan.index')
             ->with('success', 'Pengadaan dibatalkan, usulan dikembalikan ke status disetujui.');

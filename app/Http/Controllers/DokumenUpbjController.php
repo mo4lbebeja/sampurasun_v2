@@ -9,11 +9,15 @@ use App\Models\Penyedia;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Notifications\UsulanBaruNotification;
+use App\Services\ActivityLogger;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\NomorDokumenPengadaanService;
 use Barryvdh\DomPDF\Facade\Pdf;
+
 
 class DokumenUpbjController extends Controller
 {
@@ -157,42 +161,33 @@ class DokumenUpbjController extends Controller
             'dokumenUpbj',
             'dokumenPengadaan',
         ]);
-
+ 
         $dokumen = $pengadaan->dokumenUpbj;
-
+ 
         if (! $dokumen) {
             return back()->with('error', 'Dokumen belum diinput.');
         }
-
-        /*
-        * Nomor BAST wajib berasal dari dokumen_pengadaan,
-        * bukan lagi input manual.
-        */
+ 
         $bast = $pengadaan->dokumenPengadaan()
             ->where('jenis', 'bast')
             ->first();
-
+ 
         if (! $bast) {
             return back()->withErrors([
                 'complete' => 'Nomor BAST belum dibuat. Generate nomor dokumen terlebih dahulu.',
             ]);
         }
-
-        /*
-        * Sinkronkan nomor BAST resmi ke dokumen_upbj lama.
-        * Ini menjaga kompatibilitas dengan fitur rekap/filter existing.
-        */
+ 
         if (empty($dokumen->no_bast)) {
             $dokumen->update([
-                'no_bast' => $bast->nomor,
+                'no_bast'      => $bast->nomor,
                 'tanggal_bast' => $dokumen->tanggal_bast ?? now()->toDateString(),
             ]);
         }
-
-        // Validasi: semua file wajib harus sudah ter-upload
+ 
         $required = ['file_bast', 'file_invoice', 'file_faktur_pajak', 'file_kuitansi', 'file_spp'];
-        $missing = [];
-
+        $missing  = [];
+ 
         foreach ($required as $field) {
             if (empty($dokumen->{$field})) {
                 $missing[] = match ($field) {
@@ -204,29 +199,50 @@ class DokumenUpbjController extends Controller
                 };
             }
         }
-
+ 
         if (! empty($missing)) {
             return back()->withErrors([
                 'complete' => 'Dokumen berikut belum diunggah: ' . implode(', ', $missing),
             ]);
         }
-
+ 
         DB::transaction(function () use ($dokumen, $pengadaan, $request, $bast) {
             $dokumen->update([
-                'no_bast' => $dokumen->no_bast ?: $bast->nomor,
+                'no_bast'      => $dokumen->no_bast ?: $bast->nomor,
                 'tanggal_bast' => $dokumen->tanggal_bast ?? now()->toDateString(),
-                'is_complete' => true,
+                'is_complete'  => true,
                 'completed_at' => now(),
-                'petugas_id' => $request->user()->id,
+                'petugas_id'   => $request->user()->id,
             ]);
-
+ 
             $pengadaan->usulan->update(['status' => 'pembayaran']);
         });
-
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'dokumen.complete',
+            description: "Dokumen UPBJ pengadaan {$pengadaan->no_pengadaan} lengkap, diteruskan ke Keuangan",
+            usulanId:    $pengadaan->usulan?->id,
+            subjectType: 'Pengadaan',
+            subjectId:   $pengadaan->id,
+            properties:  ['no_bast' => $dokumen->no_bast],
+        );
+ 
+        // ── Notifikasi ke semua Keuangan ─────────────────────────────
+        $keuangan = \App\Models\User::query()
+            ->whereHas('role', fn ($q) => $q->where('name', 'keuangan'))
+            ->where('is_active', true)
+            ->get();
+ 
+        Notification::send($keuangan, new DokumenLengkapNotification($pengadaan));
+        // ─────────────────────────────────────────────────────────────
+ 
         return redirect()
             ->route('dokumen.index')
             ->with('success', "Dokumen pengadaan {$pengadaan->no_pengadaan} telah lengkap. Diteruskan ke Keuangan.");
     }
+
 
     /**
      * Halaman rekap semua dokumen UPBJ (history & reporting).

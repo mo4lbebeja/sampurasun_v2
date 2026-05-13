@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;       // ← TAMBAHAN: import yang kurang
 use App\Models\Anggaran;
 use App\Models\Pembayaran;
 use App\Models\Pengadaan;
@@ -16,12 +17,6 @@ class DashboardController extends Controller
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
         $user = $request->user();
 
-        /*
-         * Query dasar usulan.
-         * Admin melihat semua data.
-         * User non-admin hanya melihat usulan dari unit kerjanya
-         * melalui relasi: usulan -> pemohon -> unitKerja.
-         */
         $usulanQuery = UsulanPengadaan::query()
             ->with([
                 'pemohon',
@@ -37,18 +32,15 @@ class DashboardController extends Controller
                     });
             });
 
-        if (!$user->hasRole('admin')) {
+        if (! $user->hasRole('admin')) {
             $usulanQuery->whereHas('pemohon', function ($query) use ($user) {
                 $query->where('unit_kerja_id', $user->unit_kerja_id);
             });
         }
 
-        /*
-         * Query dasar pengadaan.
-         */
         $pengadaanQuery = Pengadaan::query()
             ->whereHas('usulan', function ($query) use ($user) {
-                if (!$user->hasRole('admin')) {
+                if (! $user->hasRole('admin')) {
                     $query->whereHas('pemohon', function ($q) use ($user) {
                         $q->where('unit_kerja_id', $user->unit_kerja_id);
                     });
@@ -61,12 +53,9 @@ class DashboardController extends Controller
                     });
             });
 
-        /*
-         * Query dasar pembayaran.
-         */
         $pembayaranQuery = Pembayaran::query()
             ->whereHas('pengadaan.usulan', function ($query) use ($user) {
-                if (!$user->hasRole('admin')) {
+                if (! $user->hasRole('admin')) {
                     $query->whereHas('pemohon', function ($q) use ($user) {
                         $q->where('unit_kerja_id', $user->unit_kerja_id);
                     });
@@ -79,9 +68,7 @@ class DashboardController extends Controller
                     });
             });
 
-        /*
-         * Statistik utama.
-         */
+        // ── Statistik utama ─────────────────────────────────────────
         $totalUsulan = (clone $usulanQuery)->count();
 
         $baruBulanIni = (clone $usulanQuery)
@@ -94,12 +81,7 @@ class DashboardController extends Controller
             ->count();
 
         $dalamProses = (clone $usulanQuery)
-            ->whereIn('status', [
-                'disetujui',
-                'dalam_pengadaan',
-                'dokumen',
-                'pembayaran',
-            ])
+            ->whereIn('status', ['disetujui', 'dalam_pengadaan', 'dokumen', 'pembayaran'])
             ->count();
 
         $selesaiBulanIni = (clone $usulanQuery)
@@ -109,22 +91,13 @@ class DashboardController extends Controller
             ->count();
 
         $totalEstimasi = (clone $usulanQuery)
-            ->whereNotIn('status', [
-                'ditolak',
-                'revisi',
-                'selesai',
-            ])
+            ->whereNotIn('status', ['ditolak', 'revisi', 'selesai'])
             ->sum('total_estimasi');
 
-        $totalKomitmen = (clone $pengadaanQuery)
-            ->sum('nilai_kontrak');
+        $totalKomitmen  = (clone $pengadaanQuery)->sum('nilai_kontrak');
+        $totalRealisasi = (clone $pembayaranQuery)->sum('nilai_bayar');
 
-        $totalRealisasi = (clone $pembayaranQuery)
-            ->sum('nilai_bayar');
-
-        /*
-         * Anggaran aktif.
-         */
+        // ── Anggaran aktif ──────────────────────────────────────────
         $anggaranQuery = Anggaran::query()
             ->where('is_active', true)
             ->where(function ($q) use ($tahunAnggaran) {
@@ -134,13 +107,10 @@ class DashboardController extends Controller
                     });
             });
 
-        $totalPagu = (clone $anggaranQuery)->sum('pagu');
+        $totalPagu     = (clone $anggaranQuery)->sum('pagu');
         $totalTerpakai = (clone $anggaranQuery)->sum('terpakai');
-        $totalSisa = (clone $anggaranQuery)->sum('sisa');
+        $totalSisa     = (clone $anggaranQuery)->sum('sisa');
 
-        /*
-         * Fallback jika kolom terpakai/sisa belum di-update.
-         */
         if ($totalTerpakai <= 0 && ($totalKomitmen > 0 || $totalRealisasi > 0)) {
             $totalTerpakai = $totalKomitmen + $totalRealisasi;
         }
@@ -149,13 +119,8 @@ class DashboardController extends Controller
             $totalSisa = max($totalPagu - $totalTerpakai, 0);
         }
 
-        $persenRealisasi = $totalPagu > 0
-            ? round(($totalRealisasi / $totalPagu) * 100, 1)
-            : 0;
-
-        $persenTerpakai = $totalPagu > 0
-            ? round(($totalTerpakai / $totalPagu) * 100, 1)
-            : 0;
+        $persenRealisasi = $totalPagu > 0 ? round(($totalRealisasi / $totalPagu) * 100, 1) : 0;
+        $persenTerpakai  = $totalPagu > 0 ? round(($totalTerpakai  / $totalPagu) * 100, 1) : 0;
 
         $pembayaranBulanIni = (clone $pembayaranQuery)
             ->whereYear('created_at', $tahunAnggaran)
@@ -163,79 +128,120 @@ class DashboardController extends Controller
             ->count();
 
         $stats = [
-            'total_usulan' => (int) $totalUsulan,
-            'menunggu_approval' => (int) $menungguApproval,
-            'dalam_proses' => (int) $dalamProses,
-            'selesai_bulan_ini' => (int) $selesaiBulanIni,
-
-            'total_estimasi' => (float) $totalEstimasi,
-            'baru_bulan_ini' => (int) $baruBulanIni,
-
-            'total_pagu' => (float) $totalPagu,
-            'total_komitmen' => (float) $totalKomitmen,
-            'total_realisasi' => (float) $totalRealisasi,
-            'total_terpakai' => (float) $totalTerpakai,
-            'total_sisa' => (float) $totalSisa,
-
-            'persen_realisasi' => (float) $persenRealisasi,
-            'persen_terpakai' => (float) $persenTerpakai,
-
-            'pembayaran_bulan_ini' => (int) $pembayaranBulanIni,
+            'total_usulan'         => (int)   $totalUsulan,
+            'menunggu_approval'    => (int)   $menungguApproval,
+            'dalam_proses'         => (int)   $dalamProses,
+            'selesai_bulan_ini'    => (int)   $selesaiBulanIni,
+            'total_estimasi'       => (float) $totalEstimasi,
+            'baru_bulan_ini'       => (int)   $baruBulanIni,
+            'total_pagu'           => (float) $totalPagu,
+            'total_komitmen'       => (float) $totalKomitmen,
+            'total_realisasi'      => (float) $totalRealisasi,
+            'total_terpakai'       => (float) $totalTerpakai,
+            'total_sisa'           => (float) $totalSisa,
+            'persen_realisasi'     => (float) $persenRealisasi,
+            'persen_terpakai'      => (float) $persenTerpakai,
+            'pembayaran_bulan_ini' => (int)   $pembayaranBulanIni,
         ];
 
-        /*
-         * Distribusi status untuk Workflow 6 Tahap.
-         *
-         * Contoh output:
-         * [
-         *   'draft' => 1,
-         *   'dokumen' => 2,
-         * ]
-         */
+        // ── Distribusi status ───────────────────────────────────────
         $statusDistribution = (clone $usulanQuery)
             ->selectRaw('status, COUNT(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status')
             ->toArray();
 
-        /*
-         * Usulan terbaru untuk tabel "Usulan Terbaru".
-         */
+        // ── Usulan terbaru ──────────────────────────────────────────
         $recentUsulan = (clone $usulanQuery)
             ->latest()
             ->limit(5)
             ->get()
             ->map(fn ($usulan) => [
-                'id' => $usulan->id,
-                'no_usulan' => $usulan->no_usulan,
-                'judul' => $usulan->judul,
+                'id'             => $usulan->id,
+                'no_usulan'      => $usulan->no_usulan,
+                'judul'          => $usulan->judul,
                 'tanggal_usulan' => optional($usulan->tanggal_usulan)->format('Y-m-d'),
                 'total_estimasi' => (string) $usulan->total_estimasi,
-                'status' => $usulan->status,
-                'pemohon' => $usulan->pemohon
-                    ? [
-                        'id' => $usulan->pemohon->id,
-                        'name' => $usulan->pemohon->name,
-                    ]
+                'status'         => $usulan->status,
+                'pemohon'        => $usulan->pemohon
+                    ? ['id' => $usulan->pemohon->id, 'name' => $usulan->pemohon->name]
                     : null,
             ])
             ->values();
 
-        return Inertia::render('Dashboard', [
-            'stats' => $stats,
-            'recentUsulan' => $recentUsulan,
-            'statusDistribution' => $statusDistribution,
+        // ── Activity feed ───────────────────────────────────────────
+        $activityFeed = ActivityLog::query()
+            ->with([
+                'user:id,name,role_id',
+                'user.role:id,name,display_name',
+                'usulan:id,no_usulan,judul',
+            ])
+            ->when(! $user->isAdmin(), function ($q) use ($user) {
+                $q->whereHas('usulan.pemohon', fn ($p) =>
+                    $p->where('unit_kerja_id', $user->unit_kerja_id)
+                );
+            })
+            ->whereIn('action', [
+                'usulan.submit',
+                'approval.approve',
+                'approval.reject',
+                'approval.revise',
+                'pengadaan.start',
+                'pengadaan.kontrak',
+                'pengadaan.cancel',
+                'dokumen.complete',
+                'pembayaran.lunas',
+                'evaluasi.submit',
+            ])
+            ->latest()
+            ->limit(10)
+            ->get()
+            ->map(fn ($log) => [
+                'id'          => $log->id,
+                'type'        => str_contains($log->action, 'approval') ? 'approval' : 'submission',
+                'keputusan'   => match ($log->action) {
+                    'approval.approve' => 'disetujui',
+                    'approval.reject'  => 'ditolak',
+                    'approval.revise'  => 'revisi',
+                    default            => null,
+                },
+                'action'      => $log->action,
+                'description' => $log->description,
+                'actor'       => $log->user?->name ?? '—',
+                'no_usulan'   => $log->usulan?->no_usulan,
+                'judul'       => $log->usulan?->judul,
+                'created_at'  => $log->created_at?->toISOString(),
+            ])
+            ->values()
+            ->toArray();
 
-            /*
-             * Props lain kita biarkan kosong dulu.
-             * Nanti di tahap berikutnya kita isi satu per satu.
-             */
-            'activityFeed' => [],
-            'metodeDistribution' => [],
-            'roleData' => [
-                'role' => $user->role?->name ?? '',
-            ],
-            'userRole' => $user->role?->name ?? '',
+        // ── Distribusi metode pengadaan ─────────────────────────────
+        $metodeDistribution = Pengadaan::query()
+            ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
+                $anggaran->where('tahun', $tahunAnggaran)
+                    ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
+                        $dpa->where('tahun_anggaran', $tahunAnggaran)
+                    );
+            })
+            ->selectRaw('metode, COUNT(*) as count, SUM(nilai_kontrak) as total_nilai')
+            ->groupBy('metode')
+            ->orderByDesc('count')
+            ->get()
+            ->map(fn ($row) => [
+                'metode'      => $row->metode,
+                'count'       => (int)   $row->count,
+                'total_nilai' => (float) $row->total_nilai,
+            ])
+            ->toArray();
+
+        return Inertia::render('Dashboard', [
+            'stats'              => $stats,
+            'recentUsulan'       => $recentUsulan,
+            'statusDistribution' => $statusDistribution,
+            'activityFeed'       => $activityFeed,        // ← PERBAIKAN: pakai variabel, bukan []
+            'metodeDistribution' => $metodeDistribution,  // ← PERBAIKAN: pakai variabel, bukan []
+            'roleData'           => ['role' => $user->role?->name ?? ''],
+            'userRole'           => $user->role?->name ?? '',
             'tahunAnggaranAktif' => $tahunAnggaran,
         ]);
     }

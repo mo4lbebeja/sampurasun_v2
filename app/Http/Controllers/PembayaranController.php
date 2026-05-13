@@ -8,6 +8,10 @@ use App\Models\Pengadaan;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Notifications\PembayaranLunasNotification;
+use App\Services\ActivityLogger;
+use Illuminate\Support\Facades\Notification;
+
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -135,39 +139,61 @@ class PembayaranController extends Controller
     public function complete(Request $request, Pengadaan $pengadaan): RedirectResponse
     {
         $pembayaran = $pengadaan->pembayaran;
-
+ 
         if (! $pembayaran) {
             return back()->with('error', 'Data pembayaran belum diinput.');
         }
-
-        // Validasi: field wajib harus terisi
+ 
         $missing = [];
-        if (empty($pembayaran->no_spm))         $missing[] = 'Nomor SPM';
-        if (empty($pembayaran->no_sp2d))        $missing[] = 'Nomor SP2D';
-        if (empty($pembayaran->tanggal_bayar))  $missing[] = 'Tanggal Bayar';
-        if (empty($pembayaran->bukti_bayar))    $missing[] = 'Bukti Bayar';
-
+        if (empty($pembayaran->no_spm))        $missing[] = 'Nomor SPM';
+        if (empty($pembayaran->no_sp2d))       $missing[] = 'Nomor SP2D';
+        if (empty($pembayaran->tanggal_bayar)) $missing[] = 'Tanggal Bayar';
+        if (empty($pembayaran->bukti_bayar))   $missing[] = 'Bukti Bayar';
+ 
         if (! empty($missing)) {
             return back()->withErrors([
                 'complete' => 'Data berikut belum lengkap: ' . implode(', ', $missing),
             ]);
         }
-
+ 
         if ((float) $pembayaran->nilai_bayar <= 0) {
             return back()->withErrors([
                 'complete' => 'Nilai bayar harus lebih dari 0.',
             ]);
         }
-
+ 
         DB::transaction(function () use ($pembayaran, $pengadaan, $request) {
             $pembayaran->update([
                 'status'     => 'lunas',
                 'petugas_id' => $request->user()->id,
             ]);
-
+ 
             $pengadaan->usulan->update(['status' => 'evaluasi']);
         });
-
+ 
+        // ── ActivityLogger ───────────────────────────────────────────
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'pembayaran.lunas',
+            description: "Pembayaran pengadaan {$pengadaan->no_pengadaan} lunas, diteruskan ke Perencanaan",
+            usulanId:    $pengadaan->usulan?->id,
+            subjectType: 'Pengadaan',
+            subjectId:   $pengadaan->id,
+            properties:  [
+                'no_sp2d'     => $pembayaran->no_sp2d,
+                'nilai_bayar' => $pembayaran->nilai_bayar,
+            ],
+        );
+ 
+        // ── Notifikasi ke semua Perencanaan ──────────────────────────
+        $perencanaan = \App\Models\User::query()
+            ->whereHas('role', fn ($q) => $q->where('name', 'perencanaan'))
+            ->where('is_active', true)
+            ->get();
+ 
+        Notification::send($perencanaan, new PembayaranLunasNotification($pengadaan));
+        // ─────────────────────────────────────────────────────────────
+ 
         return redirect()
             ->route('pembayaran.index')
             ->with('success', "Pembayaran pengadaan {$pengadaan->no_pengadaan} telah lunas. Diteruskan ke Bagian Perencanaan untuk evaluasi.");

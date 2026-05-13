@@ -33,7 +33,7 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-    public function share(Request $request): array
+   public function share(Request $request): array
     {
         return [
             ...parent::share($request),
@@ -46,14 +46,23 @@ class HandleInertiaRequests extends Middleware
                     'avatar'       => $request->user()->avatar,
                     'nip'          => $request->user()->nip,
                     'jabatan'      => $request->user()->jabatan,
-                    'role'         => $request->user()->role?->name,         // slug, ex: "sarana_umum"
-                    'role_label'   => $request->user()->role?->display_name, // ex: "Bagian Sarana & Umum"
+                    'role'         => $request->user()->role?->name,
+                    'role_label'   => $request->user()->role?->display_name,
                     'unit_kerja'   => $request->user()->unitKerja?->nama,
                     'is_admin'     => $request->user()->isAdmin(),
                 ] : null,
             ],
             'tahunAnggaranAktif' => $request->session()->get('tahun_anggaran'),
-            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'sidebarOpen' => ! $request->hasCookie('sidebar_state')
+                || $request->cookie('sidebar_state') === 'true',
+ 
+            // ── TAMBAHAN: Notifikasi unread count ───────────────────
+            // Hanya query kalau user login; 0 kalau tidak.
+            // count() sangat cepat, tidak perlu khawatir performa.
+            'notifUnreadCount' => $request->user()
+                ? $request->user()->unreadNotifications()->count()
+                : 0,
         ];
     }
+
 }
