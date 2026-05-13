@@ -1,18 +1,3 @@
-/*
- Navicat Premium Data Transfer
-
- Source Server         : sijalucom
- Source Server Type    : MariaDB
- Source Server Version : 101106 (10.11.6-MariaDB)
- Source Host           : localhost:3306
- Source Schema         : db_sampurasun
-
- Target Server Type    : MariaDB
- Target Server Version : 101106 (10.11.6-MariaDB)
- File Encoding         : 65001
-
- Date: 13/05/2026 23:58:51
-*/
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
