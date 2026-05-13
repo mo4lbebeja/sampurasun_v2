@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { FileCheck, FileText, ArrowRight, Inbox, CheckCircle2, Clock } from 'lucide-vue-next';
+import { FileCheck, FileText, ArrowRight, Inbox, Clock } from 'lucide-vue-next';
 
 import PageHeader from '@/components/ev/PageHeader.vue';
 import Section from '@/components/ev/Section.vue';
 import EmptyState from '@/components/ev/EmptyState.vue';
 import PrimaryButton from '@/components/ev/PrimaryButton.vue';
+
+// ── Types ────────────────────────────────────────────────────────
 
 type Pengadaan = {
     id: number;
@@ -36,14 +38,27 @@ type Pengadaan = {
     } | null;
 };
 
-const props = withDefaults(
-    defineProps<{
-        pengadaan?: Pengadaan[];
-    }>(),
-    {
-        pengadaan: () => [],
-    },
-);
+// SEBELUM: Pengadaan[] (array biasa)
+// SESUDAH: Paginated<Pengadaan> (objek paginator Laravel)
+type Paginated<T> = {
+    data: T[];
+    current_page: number;
+    last_page: number;
+    from: number | null;
+    to: number | null;
+    total: number;
+    links: Array<{ url: string | null; label: string; active: boolean }>;
+};
+
+// ── Props ────────────────────────────────────────────────────────
+
+// SEBELUM: pengadaan?: Pengadaan[]
+// SESUDAH: pengadaan: Paginated<Pengadaan>
+const props = defineProps<{
+    pengadaan: Paginated<Pengadaan>;
+}>();
+
+// ── Helpers ──────────────────────────────────────────────────────
 
 const formatRupiah = (val: string | number) =>
     new Intl.NumberFormat('id-ID', {
@@ -64,16 +79,19 @@ const formatRelative = (val: string) => {
     return new Date(val).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
 };
 
-// Bagi 2: belum dimulai vs dalam proses
+// SEBELUM: props.pengadaan.filter(...)
+// SESUDAH: props.pengadaan.data.filter(...) — filter dari data halaman ini
 const belumDimulai = computed(() =>
-    props.pengadaan.filter((p) => !p.dokumen_upbj),
+    props.pengadaan.data.filter((p) => !p.dokumen_upbj),
 );
 
 const dalamProses = computed(() =>
-    props.pengadaan.filter((p) => p.dokumen_upbj && !p.dokumen_upbj.is_complete),
+    props.pengadaan.data.filter((p) => p.dokumen_upbj && !p.dokumen_upbj.is_complete),
 );
 
-const totalCount = computed(() => props.pengadaan.length);
+// SEBELUM: props.pengadaan.length
+// SESUDAH: props.pengadaan.total (total seluruh data, bukan hanya halaman ini)
+const totalCount = computed(() => props.pengadaan.total);
 </script>
 
 <template>
@@ -95,131 +113,136 @@ const totalCount = computed(() => props.pengadaan.length);
             </template>
         </PageHeader>
 
-        <!-- Empty state global kalau tidak ada apapun -->
+        <!-- Empty state global -->
         <EmptyState
             v-if="totalCount === 0"
             title="Belum ada pengadaan untuk diproses"
             description="Pengadaan dengan kontrak yang sudah selesai akan otomatis muncul di sini untuk pengurusan dokumen BAST, Invoice, Faktur, Kuitansi, dan SPP."
-            :icon="Inbox"
+            :icon="FileCheck"
         />
 
-        <!-- Section: Belum Dimulai -->
-        <Section
-            v-if="belumDimulai.length > 0"
-            title="Belum Dimulai"
-            eyebrow="Antrean Baru"
-            :description="`${belumDimulai.length} pengadaan menunggu pengurusan dokumen`"
-        >
-            <div class="-mx-6 -my-6 divide-y divide-border">
-                <Link
-                    v-for="row in belumDimulai"
-                    :key="row.id"
-                    :href="`/dokumen/${row.id}`"
-                    class="flex items-center gap-4 px-6 py-4 transition hover:bg-muted/30"
-                >
-                    <div
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white"
-                        style="background-color: var(--color-brand-warning);"
+        <template v-else>
+            <!-- ── Section: Belum Dimulai ─────────────────────────────── -->
+            <Section
+                v-if="belumDimulai.length > 0"
+                title="Belum Dimulai"
+                eyebrow="Antrean Baru"
+                :description="`${belumDimulai.length} pengadaan menunggu pengurusan dokumen`"
+            >
+                <div class="-mx-6 -my-6 divide-y divide-border">
+                    <!-- SEBELUM: v-for="row in belumDimulai" (dari props.pengadaan.filter) -->
+                    <!-- SESUDAH: v-for="row in belumDimulai" (dari props.pengadaan.data.filter) -->
+                    <Link
+                        v-for="row in belumDimulai"
+                        :key="row.id"
+                        :href="`/dokumen/${row.id}`"
+                        class="flex items-center gap-4 px-6 py-4 transition hover:bg-muted/30"
                     >
-                        <FileText class="h-5 w-5" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="font-mono text-xs text-muted-foreground">
-                                {{ row.no_pengadaan }}
-                            </span>
-                            <span class="badge-status badge-warning">Belum Dimulai</span>
+                        <div
+                            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white"
+                            style="background-color: var(--color-brand-warning);"
+                        >
+                            <FileText class="h-5 w-5" />
                         </div>
-                        <div class="mt-1 font-medium">{{ row.usulan?.judul }}</div>
-                        <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                            <span>{{ formatMetode(row.metode) }}</span>
-                            <span v-if="row.penyedia">· {{ row.penyedia.nama }}</span>
-                            <span v-if="row.no_kontrak">· {{ row.no_kontrak }}</span>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono text-xs text-muted-foreground">
+                                    {{ row.no_pengadaan }}
+                                </span>
+                                <span class="badge-status badge-warning">Belum Dimulai</span>
+                            </div>
+                            <div class="mt-1 font-medium">{{ row.usulan?.judul }}</div>
+                            <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                <span>{{ formatMetode(row.metode) }}</span>
+                                <span v-if="row.penyedia">· {{ row.penyedia.nama }}</span>
+                                <span v-if="row.no_kontrak">· {{ row.no_kontrak }}</span>
+                            </div>
                         </div>
-                    </div>
-                    <div class="hidden shrink-0 text-right sm:block">
-                        <div class="text-eyebrow">Nilai Kontrak</div>
-                        <div class="mt-0.5 font-mono text-sm font-semibold">
-                            {{ formatRupiah(row.nilai_kontrak) }}
+                        <div class="hidden shrink-0 text-right sm:block">
+                            <div class="text-eyebrow">Nilai Kontrak</div>
+                            <div class="mt-0.5 font-mono text-sm font-semibold">
+                                {{ formatRupiah(row.nilai_kontrak) }}
+                            </div>
                         </div>
-                    </div>
-                    <ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-                </Link>
-            </div>
-        </Section>
+                        <ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                </div>
+            </Section>
 
-        <!-- Section: Dalam Proses -->
-        <Section
-            v-if="dalamProses.length > 0"
-            title="Dalam Proses"
-            eyebrow="Sedang Dikerjakan"
-            :description="`${dalamProses.length} pengadaan sedang dilengkapi dokumennya`"
-        >
-            <div class="-mx-6 -my-6 divide-y divide-border">
-                <Link
-                    v-for="row in dalamProses"
-                    :key="row.id"
-                    :href="`/dokumen/${row.id}`"
-                    class="flex items-center gap-4 px-6 py-4 transition hover:bg-muted/30"
-                >
-                    <div
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white"
-                        style="background-color: var(--color-brand-info);"
+            <!-- ── Section: Dalam Proses ──────────────────────────────── -->
+            <Section
+                v-if="dalamProses.length > 0"
+                title="Dalam Proses"
+                eyebrow="Sedang Dikerjakan"
+                :description="`${dalamProses.length} pengadaan sedang dilengkapi dokumennya`"
+            >
+                <div class="-mx-6 -my-6 divide-y divide-border">
+                    <Link
+                        v-for="row in dalamProses"
+                        :key="row.id"
+                        :href="`/dokumen/${row.id}`"
+                        class="flex items-center gap-4 px-6 py-4 transition hover:bg-muted/30"
                     >
-                        <Clock class="h-5 w-5" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="font-mono text-xs text-muted-foreground">
-                                {{ row.no_pengadaan }}
-                            </span>
-                            <span class="badge-status badge-info">Dalam Proses</span>
+                        <div
+                            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white"
+                            style="background-color: var(--color-brand-info);"
+                        >
+                            <Clock class="h-5 w-5" />
                         </div>
-                        <div class="mt-1 font-medium">{{ row.usulan?.judul }}</div>
-                        <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                            <span v-if="row.dokumen_upbj?.no_bast">
-                                BAST: {{ row.dokumen_upbj.no_bast }}
-                            </span>
-                            <span v-else>BAST: belum diisi</span>
-                            <span v-if="row.penyedia">· {{ row.penyedia.nama }}</span>
-                            <span v-if="row.dokumen_upbj">
-                                · diupdate {{ formatRelative(row.dokumen_upbj.updated_at) }}
-                            </span>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono text-xs text-muted-foreground">
+                                    {{ row.no_pengadaan }}
+                                </span>
+                                <span class="badge-status badge-info">Dalam Proses</span>
+                            </div>
+                            <div class="mt-1 font-medium">{{ row.usulan?.judul }}</div>
+                            <div class="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                <span>{{ formatMetode(row.metode) }}</span>
+                                <span v-if="row.penyedia">· {{ row.penyedia.nama }}</span>
+                                <span v-if="row.dokumen_upbj?.updated_at">
+                                    · Diperbarui {{ formatRelative(row.dokumen_upbj.updated_at) }}
+                                </span>
+                            </div>
                         </div>
-                    </div>
-                    <div class="hidden shrink-0 text-right sm:block">
-                        <div class="text-eyebrow">Nilai Kontrak</div>
-                        <div class="mt-0.5 font-mono text-sm font-semibold">
-                            {{ formatRupiah(row.nilai_kontrak) }}
+                        <div class="hidden shrink-0 text-right sm:block">
+                            <div class="text-eyebrow">Nilai Kontrak</div>
+                            <div class="mt-0.5 font-mono text-sm font-semibold">
+                                {{ formatRupiah(row.nilai_kontrak) }}
+                            </div>
                         </div>
-                    </div>
-                    <ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-                </Link>
-            </div>
-        </Section>
+                        <ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                </div>
+            </Section>
 
-        <!-- Helper info -->
-        <div
-            v-if="totalCount > 0"
-            class="rounded-md border border-border bg-card p-4"
-        >
-            <div class="flex items-start gap-3">
-                <div
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-white"
-                    style="background-color: var(--color-brand-info);"
-                >
-                    <FileCheck class="h-4 w-4" />
+            <!-- ── Pagination (satu untuk semua section) ─────────────── -->
+            <div
+                v-if="pengadaan.last_page > 1"
+                class="flex items-center justify-between rounded-lg border border-border bg-card px-5 py-3"
+            >
+                <div class="text-xs text-muted-foreground">
+                    Menampilkan {{ pengadaan.from }}–{{ pengadaan.to }} dari {{ pengadaan.total }}
                 </div>
-                <div class="text-sm">
-                    <div class="text-eyebrow mb-1">Alur Kerja UPBJ</div>
-                    <p class="text-muted-foreground">
-                        Untuk setiap pengadaan, lengkapi <span class="font-semibold text-foreground">5 dokumen wajib</span>:
-                        BAST, Invoice, Faktur Pajak, Kuitansi, dan SPP. Setelah semua dokumen terisi dan nomor BAST diisi,
-                        klik <span class="font-semibold text-foreground">"Selesaikan & Lanjut ke Keuangan"</span> untuk
-                        melanjutkan proses ke Bagian Keuangan.
-                    </p>
+                <div class="flex gap-1">
+                    <template v-for="(link, idx) in pengadaan.links" :key="idx">
+                        <Link
+                            v-if="link.url"
+                            :href="link.url"
+                            preserve-scroll
+                            preserve-state
+                            class="inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-card px-3 text-xs font-medium transition hover:bg-muted"
+                            :class="{ 'border-primary bg-primary text-primary-foreground hover:bg-primary/90': link.active }"
+                            v-html="link.label"
+                        />
+                        <span
+                            v-else
+                            class="inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border px-3 text-xs text-muted-foreground/50"
+                            v-html="link.label"
+                        />
+                    </template>
                 </div>
             </div>
-        </div>
+        </template>
     </div>
 </template>

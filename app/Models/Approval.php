@@ -8,7 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Approval extends Model
 {
     protected $table = 'approvals';
-    protected $guarded = [];
+
+    protected $fillable = [
+        'usulan_id',
+        'approver_id',
+        'keputusan',
+        'catatan',
+        'tanggal_keputusan',
+    ];
 
     protected $casts = [
         'tanggal_keputusan' => 'datetime',

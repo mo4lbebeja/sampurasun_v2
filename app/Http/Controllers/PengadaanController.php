@@ -26,8 +26,15 @@ class PengadaanController extends Controller
     public function index(Request $request): Response
     {
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
-        // Tampilkan usulan disetujui hanya untuk tahun anggaran aktif
+ 
+        $anggaranFilter = function ($anggaran) use ($tahunAnggaran) {
+            $anggaran->where('tahun', $tahunAnggaran)
+                ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
+                    $dpa->where('tahun_anggaran', $tahunAnggaran)
+                );
+        };
+ 
+        // Usulan disetujui, siap mulai pengadaan — paginate 20
         $usulanSiap = UsulanPengadaan::query()
             ->with([
                 'pemohon:id,name,unit_kerja_id',
@@ -37,16 +44,12 @@ class PengadaanController extends Controller
                 'anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
             ])
             ->where('status', 'disetujui')
-            ->whereHas('anggaran', function ($anggaran) use ($tahunAnggaran) {
-                $anggaran->where('tahun', $tahunAnggaran)
-                    ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
-                        $dpa->where('tahun_anggaran', $tahunAnggaran);
-                    });
-            })
+            ->whereHas('anggaran', $anggaranFilter)
             ->latest('id')
-            ->get();
-
-        // Tampilkan pengadaan berjalan hanya untuk tahun anggaran aktif
+            ->paginate(20, ['*'], 'siap_page')
+            ->withQueryString();
+ 
+        // Pengadaan sedang berjalan (proses/kontrak) — paginate 20
         $pengadaanBerjalan = Pengadaan::query()
             ->with([
                 'usulan:id,no_usulan,judul,total_estimasi,status,anggaran_id',
@@ -56,15 +59,11 @@ class PengadaanController extends Controller
                 'penyedia:id,nama',
             ])
             ->whereIn('status', ['proses', 'kontrak'])
-            ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
-                $anggaran->where('tahun', $tahunAnggaran)
-                    ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
-                        $dpa->where('tahun_anggaran', $tahunAnggaran);
-                    });
-            })
+            ->whereHas('usulan.anggaran', $anggaranFilter)
             ->latest('id')
-            ->get();
-
+            ->paginate(20, ['*'], 'berjalan_page')
+            ->withQueryString();
+ 
         return Inertia::render('pengadaan/Index', [
             'usulanSiap'        => $usulanSiap,
             'pengadaanBerjalan' => $pengadaanBerjalan,

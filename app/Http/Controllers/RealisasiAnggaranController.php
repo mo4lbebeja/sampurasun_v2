@@ -6,6 +6,7 @@ use App\Models\Anggaran;
 use App\Models\Pembayaran;
 use App\Models\Pengadaan;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,111 +24,126 @@ class RealisasiAnggaranController extends Controller
 
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
 
-        // Base query berdasarkan tahun anggaran aktif dari login
+        // -----------------------------------------------------------------------
+        // Subquery komitmen: SUM(nilai_kontrak) per anggaran_id
+        // Kondisi: pengadaan status='kontrak' & belum ada pembayaran lunas
+        // -----------------------------------------------------------------------
+        $komitmenSub = DB::table('pengadaan as p')
+            ->join('usulan_pengadaan as u', 'u.id', '=', 'p.usulan_id')
+            ->where('p.status', 'kontrak')
+            ->whereNotExists(function ($sub) {
+                $sub->from('pembayaran as pb')
+                    ->whereColumn('pb.pengadaan_id', 'p.id')
+                    ->where('pb.status', 'lunas');
+            })
+            ->whereNull('u.deleted_at')
+            ->select('u.anggaran_id', DB::raw('SUM(p.nilai_kontrak) as total_komitmen'))
+            ->groupBy('u.anggaran_id');
+
+        // -----------------------------------------------------------------------
+        // Subquery realisasi: SUM(nilai_bayar) per anggaran_id
+        // Kondisi: pembayaran status='lunas'
+        // -----------------------------------------------------------------------
+        $realisasiSub = DB::table('pembayaran as pb')
+            ->join('pengadaan as p', 'p.id', '=', 'pb.pengadaan_id')
+            ->join('usulan_pengadaan as u', 'u.id', '=', 'p.usulan_id')
+            ->where('pb.status', 'lunas')
+            ->whereNull('u.deleted_at')
+            ->select('u.anggaran_id', DB::raw('SUM(pb.nilai_bayar) as total_realisasi'))
+            ->groupBy('u.anggaran_id');
+
+        // -----------------------------------------------------------------------
+        // Subquery jumlah pengadaan: COUNT per anggaran_id
+        // -----------------------------------------------------------------------
+        $jumlahPengadaanSub = DB::table('pengadaan as p')
+            ->join('usulan_pengadaan as u', 'u.id', '=', 'p.usulan_id')
+            ->whereIn('p.status', ['kontrak', 'selesai'])
+            ->whereNull('u.deleted_at')
+            ->select('u.anggaran_id', DB::raw('COUNT(p.id) as jumlah_pengadaan'))
+            ->groupBy('u.anggaran_id');
+
+        // Base query dengan LEFT JOIN ke subquery — 1 kali query ke DB
         $query = Anggaran::query()
             ->with([
                 'subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
                 'subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
             ])
+            ->leftJoinSub($komitmenSub, 'k', fn ($j) => $j->on('anggaran.id', '=', 'k.anggaran_id'))
+            ->leftJoinSub($realisasiSub, 'r', fn ($j) => $j->on('anggaran.id', '=', 'r.anggaran_id'))
+            ->leftJoinSub($jumlahPengadaanSub, 'jp', fn ($j) => $j->on('anggaran.id', '=', 'jp.anggaran_id'))
+            ->addSelect([
+                'anggaran.*',
+                DB::raw('COALESCE(k.total_komitmen, 0) as komitmen'),
+                DB::raw('COALESCE(r.total_realisasi, 0) as realisasi'),
+                DB::raw('COALESCE(jp.jumlah_pengadaan, 0) as jumlah_pengadaan'),
+            ])
             ->where(function ($q) use ($tahunAnggaran) {
-                $q->where('tahun', $tahunAnggaran)
+                $q->where('anggaran.tahun', $tahunAnggaran)
                     ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
                         $dpa->where('tahun_anggaran', $tahunAnggaran);
                     });
             })
-            ->orderBy('tahun', 'desc')
-            ->orderBy('kode_rekening');
+            ->orderBy('anggaran.tahun', 'desc')
+            ->orderBy('anggaran.kode_rekening');
 
-        // Filter tahun di halaman tidak perlu lagi lintas tahun.
-        // Kalau tetap ingin dipakai, batasi hanya dalam konteks tahun aktif.
         if ($tahun = $request->input('tahun')) {
-            $query->where('tahun', $tahun);
+            $query->where('anggaran.tahun', $tahun);
         }
 
-        // Filter: status (semua / aktif / nonaktif)
         if ($status = $request->input('status')) {
             if ($status === 'aktif') {
-                $query->where('is_active', true);
+                $query->where('anggaran.is_active', true);
             } elseif ($status === 'nonaktif') {
-                $query->where('is_active', false);
+                $query->where('anggaran.is_active', false);
             }
         }
 
-        // Filter: search
         if ($search = $request->string('search')->toString()) {
             $query->where(function ($q) use ($search) {
-                $q->where('kode_rekening', 'like', "%{$search}%")
-                  ->orWhere('nama_rekening', 'like', "%{$search}%")
-                  ->orWhere('uraian', 'like', "%{$search}%");
+                $q->where('anggaran.kode_rekening', 'like', "%{$search}%")
+                  ->orWhere('anggaran.nama_rekening', 'like', "%{$search}%")
+                  ->orWhere('anggaran.uraian', 'like', "%{$search}%");
             });
         }
 
         $anggaranList = $query->paginate(20)->withQueryString();
 
-        // Hitung komitmen & realisasi per anggaran (manual loop, karena pakai relasi nested)
-        $anggaranList->getCollection()->transform(function ($a) {
-            // Komitmen: pengadaan kontrak yang BELUM lunas
-            $komitmen = Pengadaan::query()
-                ->where('status', 'kontrak')
-                ->whereDoesntHave('pembayaran', fn ($q) => $q->where('status', 'lunas'))
-                ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $a->id))
-                ->sum('nilai_kontrak');
-
-            // Realisasi: pembayaran lunas
-            $realisasi = Pembayaran::query()
-                ->where('status', 'lunas')
-                ->whereHas('pengadaan.usulan', fn ($q) => $q->where('anggaran_id', $a->id))
-                ->sum('nilai_bayar');
-
-            // Hitung jumlah pengadaan terkait (untuk drill-down nanti)
-            $jumlahPengadaan = Pengadaan::query()
-                ->whereIn('status', ['kontrak', 'selesai'])
-                ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $a->id))
-                ->count();
-
-            $a->komitmen = (float) $komitmen;
-            $a->realisasi = (float) $realisasi;
-            $a->jumlah_pengadaan = $jumlahPengadaan;
-
-            return $a;
-        });
-
-        // Stats keseluruhan (berdasarkan filter aktif)
+        // -----------------------------------------------------------------------
+        // Stats keseluruhan — 1 query agregat, bukan loop
+        // -----------------------------------------------------------------------
         $statsQuery = clone $query;
-        $allAnggaran = $statsQuery->get();
+        $statsQuery->getQuery()->orders = [];
+        $statsQuery->getQuery()->limit = null;
+        $statsQuery->getQuery()->offset = null;
 
-        $totalPagu = $allAnggaran->sum('pagu');
-        $totalKomitmen = 0;
-        $totalRealisasi = 0;
+        $statsRow = DB::table(DB::raw("({$statsQuery->toBase()->toSql()}) as agg"))
+            ->mergeBindings($statsQuery->toBase())
+            ->selectRaw('
+                COALESCE(SUM(pagu), 0) as total_pagu,
+                COALESCE(SUM(komitmen), 0) as total_komitmen,
+                COALESCE(SUM(realisasi), 0) as total_realisasi
+            ')
+            ->first();
 
-        foreach ($allAnggaran as $a) {
-            $totalKomitmen += Pengadaan::query()
-                ->where('status', 'kontrak')
-                ->whereDoesntHave('pembayaran', fn ($q) => $q->where('status', 'lunas'))
-                ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $a->id))
-                ->sum('nilai_kontrak');
-
-            $totalRealisasi += Pembayaran::query()
-                ->where('status', 'lunas')
-                ->whereHas('pengadaan.usulan', fn ($q) => $q->where('anggaran_id', $a->id))
-                ->sum('nilai_bayar');
-        }
+        $totalPagu      = (float) ($statsRow->total_pagu ?? 0);
+        $totalKomitmen  = (float) ($statsRow->total_komitmen ?? 0);
+        $totalRealisasi = (float) ($statsRow->total_realisasi ?? 0);
+        $totalTerpakai  = $totalKomitmen + $totalRealisasi;
 
         $stats = [
-            'total_pagu'      => $totalPagu,
-            'total_komitmen'  => $totalKomitmen,
-            'total_realisasi' => $totalRealisasi,
-            'total_terpakai'  => $totalKomitmen + $totalRealisasi,
-            'total_sisa'      => $totalPagu - ($totalKomitmen + $totalRealisasi),
-            'persen_terpakai' => $totalPagu > 0
-                ? round((($totalKomitmen + $totalRealisasi) / $totalPagu) * 100, 1)
+            'total_pagu'       => $totalPagu,
+            'total_komitmen'   => $totalKomitmen,
+            'total_realisasi'  => $totalRealisasi,
+            'total_terpakai'   => $totalTerpakai,
+            'total_sisa'       => $totalPagu - $totalTerpakai,
+            'persen_terpakai'  => $totalPagu > 0
+                ? round(($totalTerpakai / $totalPagu) * 100, 1)
                 : 0,
             'persen_realisasi' => $totalPagu > 0
                 ? round(($totalRealisasi / $totalPagu) * 100, 1)
                 : 0,
         ];
 
-        // Daftar tahun untuk dropdown filter
         $tahunOptions = collect([$tahunAnggaran]);
 
         return Inertia::render('realisasi/Index', [
@@ -136,8 +152,8 @@ class RealisasiAnggaranController extends Controller
             'tahunOptions' => $tahunOptions,
             'filters'      => [
                 'search' => $request->string('search')->toString(),
-                'tahun'  => $tahun,
-                'status' => $status,
+                'tahun'  => $tahun ?? null,
+                'status' => $status ?? null,
             ],
         ]);
     }
@@ -165,8 +181,7 @@ class RealisasiAnggaranController extends Controller
             || (int) $anggaran->subKegiatan?->dpaAnggaran?->tahun_anggaran === $tahunAnggaran;
 
         abort_unless($sesuaiTahun, 403);
-        
-        // Ambil semua pengadaan terkait anggaran ini
+
         $pengadaanList = Pengadaan::query()
             ->with([
                 'usulan:id,no_usulan,judul,anggaran_id,pemohon_id',
@@ -180,8 +195,8 @@ class RealisasiAnggaranController extends Controller
             ->get();
 
         return response()->json([
-            'anggaran'      => $anggaran,
-            'pengadaan'     => $pengadaanList,
+            'anggaran'  => $anggaran,
+            'pengadaan' => $pengadaanList,
         ]);
     }
 }

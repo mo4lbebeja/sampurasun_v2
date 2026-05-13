@@ -20,8 +20,7 @@ class PembayaranController extends Controller
     public function index(Request $request): Response
     {
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
-        // Pengadaan dengan usulan status='pembayaran' dan tahun anggaran aktif
+ 
         $pengadaan = Pengadaan::query()
             ->with([
                 'usulan:id,no_usulan,judul,total_estimasi,pemohon_id,status,anggaran_id',
@@ -36,13 +35,14 @@ class PembayaranController extends Controller
             ->whereHas('usulan', fn ($q) => $q->where('status', 'pembayaran'))
             ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
                 $anggaran->where('tahun', $tahunAnggaran)
-                    ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
-                        $dpa->where('tahun_anggaran', $tahunAnggaran);
-                    });
+                    ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
+                        $dpa->where('tahun_anggaran', $tahunAnggaran)
+                    );
             })
             ->latest('id')
-            ->get();
-
+            ->paginate(20)           // ← ganti dari ->get()
+            ->withQueryString();
+ 
         return Inertia::render('pembayaran/Index', [
             'pengadaan' => $pengadaan,
         ]);

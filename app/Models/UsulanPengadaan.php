@@ -13,7 +13,21 @@ class UsulanPengadaan extends Model
     use SoftDeletes;
 
     protected $table = 'usulan_pengadaan';
-    protected $guarded = [];
+
+    protected $fillable = [
+        'no_usulan',
+        'pemohon_id',
+        'anggaran_id',
+        'tanggal_usulan',
+        'judul',
+        'latar_belakang',
+        'keterangan',
+        'total_estimasi',
+        'status',
+        'catatan_pemohon',
+        'file_pendukung',
+        'submitted_at',
+    ];
 
     protected $casts = [
         'tanggal_usulan' => 'date',
