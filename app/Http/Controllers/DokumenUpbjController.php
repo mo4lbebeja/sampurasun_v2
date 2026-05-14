@@ -6,18 +6,20 @@ use App\Http\Requests\UpdateDokumenUpbjRequest;
 use App\Models\DokumenUpbj;
 use App\Models\Pengadaan;
 use App\Models\Penyedia;
+use App\Notifications\DokumenLengkapNotification; 
+use App\Services\ActivityLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Notifications\UsulanBaruNotification;
-use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\NomorDokumenPengadaanService;
 use Barryvdh\DomPDF\Facade\Pdf;
-
+use App\Notifications\PengadaanKontrakNotification;
+use App\Notifications\UsulanDisetujuiNotification;
 
 class DokumenUpbjController extends Controller
 {
@@ -39,16 +41,21 @@ class DokumenUpbjController extends Controller
                 'penyedia:id,nama',
                 'dokumenUpbj:id,pengadaan_id,is_complete,no_bast,completed_at,updated_at',
             ])
-            ->whereHas('usulan', fn ($q) => $q->where('status', 'dokumen'))
+            // ← SEBELUM: ->whereHas('usulan', fn ($q) => $q->where('status', 'dokumen'))
+            // ← SESUDAH: filter pengadaan.status = 'kontrak' dan dokumen belum selesai
+            ->where('status', 'kontrak')
+            ->where(function ($q) {
+                $q->doesntHave('dokumenUpbj')
+                  ->orWhereHas('dokumenUpbj', fn ($d) => $d->where('is_complete', false));
+            })
             ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
                 $anggaran->where('tahun', $tahunAnggaran)
                     ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
                         $dpa->where('tahun_anggaran', $tahunAnggaran)
                     );
             })
-            ->where('status', 'kontrak')
             ->latest('id')
-            ->paginate(20)           // ← ganti dari ->get()
+            ->paginate(20)
             ->withQueryString();
  
         return Inertia::render('dokumen/Index', [
@@ -88,21 +95,24 @@ class DokumenUpbjController extends Controller
      */
     public function edit(Pengadaan $pengadaan): Response|RedirectResponse
     {
-        // Validasi: hanya pengadaan yang siap proses dokumen
-        $pengadaan->load('usulan');
-
-        if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'dokumen') {
+        $pengadaan->load('usulan', 'dokumenUpbj');
+ 
+        // ← SEBELUM:
+        // if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'dokumen')
+        //
+        // ← SESUDAH: cek langsung status paket pengadaan
+        if ($pengadaan->status !== 'kontrak') {
             return redirect()
                 ->route('dokumen.index')
-                ->with('error', 'Pengadaan ini tidak dalam tahap dokumen.');
+                ->with('error', 'Pengadaan ini tidak dalam tahap pengurusan dokumen.');
         }
-
-        // Auto-create dokumen_upbj kalau belum ada (find or create)
+ 
+        // Auto-create dokumen_upbj kalau belum ada
         $dokumen = DokumenUpbj::firstOrCreate(
             ['pengadaan_id' => $pengadaan->id],
-            ['petugas_id' => $this->petugasId()],
+            ['petugas_id'   => $this->petugasId()],
         );
-
+ 
         $pengadaan->load([
             'usulan:id,no_usulan,judul,total_estimasi,status,pemohon_id',
             'usulan.pemohon:id,name,unit_kerja_id',
@@ -111,7 +121,7 @@ class DokumenUpbjController extends Controller
             'pejabat:id,name',
             'dokumenPengadaan',
         ]);
-
+ 
         return Inertia::render('dokumen/Edit', [
             'pengadaan' => $pengadaan,
             'dokumen'   => $dokumen,
@@ -156,11 +166,7 @@ class DokumenUpbjController extends Controller
      */
     public function complete(Request $request, Pengadaan $pengadaan): RedirectResponse
     {
-        $pengadaan->load([
-            'usulan',
-            'dokumenUpbj',
-            'dokumenPengadaan',
-        ]);
+        $pengadaan->load(['usulan', 'dokumenUpbj', 'dokumenPengadaan']);
  
         $dokumen = $pengadaan->dokumenUpbj;
  
@@ -215,28 +221,27 @@ class DokumenUpbjController extends Controller
                 'petugas_id'   => $request->user()->id,
             ]);
  
-            $pengadaan->usulan->update(['status' => 'pembayaran']);
+            // ← DIHAPUS: $pengadaan->usulan->update(['status' => 'pembayaran'])
+            // Keuangan melihat paket dari dokumenUpbj.is_complete = true
+            // Tidak perlu update usulan.status
         });
  
-        // ── ActivityLogger ───────────────────────────────────────────
         ActivityLogger::fromRequest(
             request:     $request,
             action:      'dokumen.complete',
-            description: "Dokumen UPBJ pengadaan {$pengadaan->no_pengadaan} lengkap, diteruskan ke Keuangan",
+            description: "Dokumen UPBJ pengadaan {$pengadaan->no_pengadaan} lengkap, siap pembayaran",
             usulanId:    $pengadaan->usulan?->id,
             subjectType: 'Pengadaan',
             subjectId:   $pengadaan->id,
             properties:  ['no_bast' => $dokumen->no_bast],
         );
  
-        // ── Notifikasi ke semua Keuangan ─────────────────────────────
         $keuangan = \App\Models\User::query()
             ->whereHas('role', fn ($q) => $q->where('name', 'keuangan'))
             ->where('is_active', true)
             ->get();
  
-        Notification::send($keuangan, new DokumenLengkapNotification($pengadaan));
-        // ─────────────────────────────────────────────────────────────
+        \Illuminate\Support\Facades\Notification::send($keuangan, new DokumenLengkapNotification($pengadaan));
  
         return redirect()
             ->route('dokumen.index')
@@ -328,14 +333,36 @@ class DokumenUpbjController extends Controller
         $dokumen = $query->latest('updated_at')->paginate(20)->withQueryString();
 
         // Stats summary (untuk banner di atas)
+        // Stats dihitung dari Pengadaan (bukan DokumenUpbj)
+        // agar paket yang belum dikunjungi detail-nya tetap terhitung
+        $statsBase = \App\Models\Pengadaan::query()
+            ->whereIn('status', ['kontrak', 'selesai'])
+            ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
+                $anggaran->where('tahun', $tahunAnggaran)
+                    ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
+                        $dpa->where('tahun_anggaran', $tahunAnggaran);
+                    });
+            });
+
         $stats = [
-            'total'      => (clone $query)->count(),
-            'selesai'    => (clone $query)->where('is_complete', true)->count(),
-            'proses'     => (clone $query)->where('is_complete', false)->whereNotNull('no_bast')->count(),
-            'belum'      => (clone $query)->where('is_complete', false)->whereNull('no_bast')->count(),
-            'total_nilai' => \App\Models\Pengadaan::query()
-                ->whereIn('id', (clone $query)->pluck('pengadaan_id'))
-                ->sum('nilai_kontrak'),
+            'total'      => (clone $statsBase)->count(),
+            'selesai'    => (clone $statsBase)
+                            ->whereHas('dokumenUpbj', fn ($q) => $q->where('is_complete', true))
+                            ->count(),
+            'proses'     => (clone $statsBase)
+                            ->whereHas('dokumenUpbj', fn ($q) =>
+                                $q->where('is_complete', false)->whereNotNull('no_bast')
+                            )
+                            ->count(),
+            'belum'      => (clone $statsBase)
+                            ->where(function ($q) {
+                                $q->doesntHave('dokumenUpbj')
+                                    ->orWhereHas('dokumenUpbj', fn ($d) =>
+                                        $d->where('is_complete', false)->whereNull('no_bast')
+                                    );
+                            })
+                            ->count(),
+            'total_nilai' => (clone $statsBase)->sum('nilai_kontrak'),
         ];
 
         // Filter options

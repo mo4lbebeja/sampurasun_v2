@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
 
+use App\Notifications\UsulanDisetujuiNotification;
 
 class UsulanPengadaanController extends Controller
 {
@@ -190,16 +191,30 @@ class UsulanPengadaanController extends Controller
             'anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
             'items.kategori:id,nama',
             'approvals.approver:id,name,jabatan',
-            'pengadaan.penyedia:id,nama',
+            // Semua paket pengadaan dari usulan ini
+            'pengadaan:id,usulan_id,no_pengadaan,nama_paket,status,metode,estimasi_paket,nilai_kontrak',
         ]);
+ 
         $tahunAnggaran = (int) request()->session()->get('tahun_anggaran');
-
+ 
         $sesuaiTahun = (int) $usulan->anggaran?->tahun === $tahunAnggaran
             || (int) $usulan->anggaran?->subKegiatan?->dpaAnggaran?->tahun_anggaran === $tahunAnggaran;
-
+ 
         abort_unless($sesuaiTahun, 403);
+ 
+        // ID item yang sudah di-assign ke paket manapun yang tidak batal
+        $itemsAssignedIds = \App\Models\PengadaanItemAssignment::query()
+            ->whereHas('pengadaan', fn ($q) =>
+                $q->where('usulan_id', $usulan->id)
+                  ->where('status', '!=', 'batal')
+            )
+            ->pluck('usulan_item_id')
+            ->toArray();
+ 
         return Inertia::render('usulan/Show', [
-            'usulan' => $usulan,
+            'usulan'           => $usulan,
+            'pengadaanList'    => $usulan->pengadaan,
+            'itemsAssignedIds' => $itemsAssignedIds,
         ]);
     }
 

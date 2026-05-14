@@ -2,58 +2,47 @@
 
 namespace App\Observers;
 
-use App\Models\Anggaran;
 use App\Models\Pengadaan;
 
+/**
+ * Observer yang memicu recompute anggaran dan refresh status usulan
+ * setiap kali status pengadaan (paket) berubah.
+ *
+ * SEBELUM: langsung update usulan->status secara hardcode per kondisi
+ * SESUDAH: delegasikan ke usulan->refreshStatus() yang menghitung
+ *          berdasarkan kondisi SEMUA paket aktif dari usulan tersebut
+ */
 class PengadaanObserver
 {
-    /**
-     * Saat pengadaan di-update, cek apakah status berubah ke/dari 'kontrak'.
-     * Kalau iya, recompute anggaran.terpakai.
-     */
     public function updated(Pengadaan $pengadaan): void
     {
-        // Hanya bereaksi kalau kolom 'status' berubah
         if (! $pengadaan->wasChanged('status')) {
             return;
         }
 
-        $oldStatus = $pengadaan->getOriginal('status');
-        $newStatus = $pengadaan->status;
+        // Recompute anggaran (komitmen/realisasi) saat status paket berubah
+        // ke/dari 'kontrak' atau 'selesai'
+        $statusYangMempengaruhiAnggaran = ['kontrak', 'selesai'];
+        $statusLama  = $pengadaan->getOriginal('status');
+        $statusBaru  = $pengadaan->status;
 
-        // Trigger recompute kalau:
-        // - Naik ke kontrak (komitmen baru)
-        // - Turun dari kontrak (komitmen dibatalkan)
-        $relevantTransition = $newStatus === 'kontrak' || $oldStatus === 'kontrak';
+        $perluRecompute = in_array($statusLama, $statusYangMempengaruhiAnggaran)
+            || in_array($statusBaru, $statusYangMempengaruhiAnggaran);
 
-        if (! $relevantTransition) {
-            return;
+        if ($perluRecompute) {
+            $pengadaan->usulan?->anggaran?->recompute();
         }
 
-        $this->recomputeAnggaran($pengadaan);
+        // Refresh status usulan secara agregat dari semua paket aktif.
+        // SEBELUM: $pengadaan->usulan->update(['status' => 'dalam_pengadaan']) hardcode
+        // SESUDAH: delegasikan ke method yang aware multi-paket
+        $pengadaan->usulan?->refreshStatus();
     }
 
-    /**
-     * Saat pengadaan dihapus, juga recompute (jaga konsistensi).
-     */
     public function deleted(Pengadaan $pengadaan): void
     {
-        if ($pengadaan->status === 'kontrak') {
-            $this->recomputeAnggaran($pengadaan);
-        }
-    }
-
-    /**
-     * Helper: cari anggaran terkait & recompute.
-     */
-    private function recomputeAnggaran(Pengadaan $pengadaan): void
-    {
-        $anggaranId = $pengadaan->usulan?->anggaran_id;
-
-        if (! $anggaranId) {
-            return;
-        }
-
-        Anggaran::find($anggaranId)?->recompute();
+        // Paket dihapus (batal) — refresh status usulan
+        $pengadaan->usulan?->refreshStatus();
+        $pengadaan->usulan?->anggaran?->recompute();
     }
 }

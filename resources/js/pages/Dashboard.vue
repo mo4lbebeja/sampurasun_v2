@@ -68,6 +68,14 @@ const props = withDefaults(
         metodeDistribution?: MetodeItem[];
         roleData?: RoleData;
         userRole?: string;
+        workflowCounts?: {          // ← tambahkan di sini, dalam defineProps
+            usulan: number;
+            approval: number;
+            pengadaan: number;
+            dokumen: number;
+            pembayaran: number;
+            evaluasi: number;
+        };
     }>(),
     {
         stats: () => ({
@@ -84,6 +92,14 @@ const props = withDefaults(
         metodeDistribution: () => [],
         roleData: () => ({ role: '' }),
         userRole: '',
+        workflowCounts: () => ({    // ← tambahkan di sini, dalam objek defaults
+            usulan: 0,
+            approval: 0,
+            pengadaan: 0,
+            dokumen: 0,
+            pembayaran: 0,
+            evaluasi: 0,
+        }),
     },
 );
 
@@ -112,31 +128,30 @@ const formatRupiahCompact = (val: string | number) => formatRupiahFull(val);
 const formatDate = (val: string) =>
     new Date(val).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 
-const formatRelative = (val: string) => {
-    const diff = (Date.now() - new Date(val).getTime()) / 1000;
+const formatRelative = (val: string | null | undefined): string => {
+    if (!val) return '—';
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return '—';
+    const diff = (Date.now() - d.getTime()) / 1000;
     if (diff < 60) return 'Baru saja';
     if (diff < 3600) return `${Math.floor(diff / 60)} menit lalu`;
     if (diff < 86400) return `${Math.floor(diff / 3600)} jam lalu`;
     if (diff < 604800) return `${Math.floor(diff / 86400)} hari lalu`;
-    return new Date(val).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
 };
+
+const activityFeedLimited = computed(() => props.activityFeed.slice(0, 6));
 
 const formatMetode = (val: string) =>
     val.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 const workflowStages = computed(() => [
-    { num: 1, name: 'Usulan', role: 'Sarana & Umum',
-      count: (props.statusDistribution.draft ?? 0) + (props.statusDistribution.diajukan ?? 0) },
-    { num: 2, name: 'Approval', role: 'PPTK',
-      count: props.statusDistribution.diajukan ?? 0 },
-    { num: 3, name: 'Pengadaan', role: 'Pejabat Pengadaan',
-      count: props.statusDistribution.dalam_pengadaan ?? 0 },
-    { num: 4, name: 'Dokumen', role: 'UPBJ',
-      count: props.statusDistribution.dokumen ?? 0 },
-    { num: 5, name: 'Pembayaran', role: 'Keuangan',
-      count: props.statusDistribution.pembayaran ?? 0 },
-    { num: 6, name: 'Evaluasi', role: 'Perencanaan',
-      count: props.statusDistribution.evaluasi ?? 0 },
+    { num: 1, name: 'Usulan',    role: 'Sarana & Umum',       count: props.workflowCounts?.usulan    ?? 0 },
+    { num: 2, name: 'Approval',  role: 'PPTK',                count: props.workflowCounts?.approval  ?? 0 },
+    { num: 3, name: 'Pengadaan', role: 'Pejabat Pengadaan',   count: props.workflowCounts?.pengadaan ?? 0 },
+    { num: 4, name: 'Dokumen',   role: 'UPBJ',                count: props.workflowCounts?.dokumen   ?? 0 },
+    { num: 5, name: 'Pembayaran', role: 'Keuangan',           count: props.workflowCounts?.pembayaran ?? 0 },
+    { num: 6, name: 'Selesai', role: 'Pembayaran Lunas',      count: props.workflowCounts?.evaluasi ?? 0 },
 ]);
 
 const quickAction = computed(() => {
@@ -366,8 +381,11 @@ const metodeColor = (idx: number) => {
         </div>
 
         <!-- Workflow 6 Tahap -->
-        <Section title="Distribusi Tahapan Workflow" eyebrow="Status Real-time"
-            description="Jumlah usulan yang sedang berada di setiap tahap proses pengadaan"
+        <!-- Ganti description di Section Distribusi Tahapan -->
+        <Section
+            title="Distribusi Tahapan Workflow"
+            eyebrow="Status Real-time"
+            description="Tahap 1–2: jumlah usulan · Tahap 3–6: jumlah paket pengadaan"
         >
             <div class="flex flex-col gap-2 lg:flex-row lg:items-stretch">
                 <template v-for="(stage, idx) in workflowStages" :key="stage.num">
@@ -388,6 +406,10 @@ const metodeColor = (idx: number) => {
                         <div class="font-display text-2xl font-semibold leading-none"
                             :class="stage.count > 0 ? 'text-primary' : 'text-muted-foreground'"
                         >{{ stage.count }}</div>
+                        <!-- Tambahkan ini: -->
+                        <div class="text-[10px] text-muted-foreground">
+                            {{ stage.num <= 2 ? 'usulan' : 'paket' }}
+                        </div>
                     </div>
                     <div v-if="idx < workflowStages.length - 1" class="hidden items-center text-border lg:flex">→</div>
                 </template>
@@ -572,34 +594,68 @@ const metodeColor = (idx: number) => {
 
             <div>
                 <Section title="Aktivitas Terkini" eyebrow="Audit Trail">
-                    <EmptyState v-if="activityFeed.length === 0"
-                        title="Belum ada aktivitas" description="Aktivitas pengguna akan muncul di sini." :icon="Clock" />
-
-                    <ul v-else class="space-y-4">
-                        <li v-for="(item, idx) in activityFeed"
-                            :key="`${item.type}-${idx}-${item.usulan_id}`"
-                            class="flex gap-3"
+                    <EmptyState
+                        v-if="activityFeed.length === 0"
+                        title="Belum ada aktivitas"
+                        description="Aktivitas pengguna akan muncul di sini."
+                        :icon="Clock"
+                    />
+            
+                    <template v-else>
+                        <!-- List dibatasi 6 item, overflow scroll -->
+                        <ul class="-mx-6 max-h-[420px] divide-y divide-border overflow-y-auto">
+                            <li
+                                v-for="(item, idx) in activityFeedLimited"
+                                :key="`activity-${idx}`"
+                                class="flex gap-3 px-6 py-3"
+                            >
+                                <!-- Dot + connector line -->
+                                <div class="relative flex flex-col items-center">
+                                    <div
+                                        class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                                        :class="activityMeta(item).color"
+                                    />
+                                    <div
+                                        v-if="idx < activityFeedLimited.length - 1"
+                                        class="mt-1 w-px flex-1 bg-border"
+                                    />
+                                </div>
+            
+                                <!-- Konten -->
+                                <div class="min-w-0 flex-1 pb-3">
+                                    <!-- FIX spasi: gunakan string interpolation, bukan dua <span> -->
+                                    <div class="text-sm leading-snug">
+                                        <span class="font-medium">{{ item.actor }}</span>
+                                        <span class="text-muted-foreground">
+                                            {{ ' ' + activityMeta(item).label.toLowerCase() }}
+                                        </span>
+                                    </div>
+            
+                                    <!-- Link ke usulan -->
+                                    <Link
+                                        v-if="item.usulan_id"
+                                        :href="`/usulan/${item.usulan_id}`"
+                                        class="mt-0.5 block truncate text-xs font-medium text-primary hover:underline"
+                                    >
+                                        {{ item.no_usulan }} · {{ item.judul }}
+                                    </Link>
+            
+                                    <!-- Waktu relatif — aman dari null/Invalid Date -->
+                                    <div class="mt-1 text-[11px] text-muted-foreground">
+                                        {{ formatRelative(item.timestamp) }}
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+            
+                        <!-- Footer: tampilkan info jika ada lebih dari 6 -->
+                        <div
+                            v-if="activityFeed.length > 6"
+                            class="-mx-6 -mb-6 border-t border-border bg-muted/20 px-6 py-2.5 text-center text-xs text-muted-foreground"
                         >
-                            <div class="relative flex flex-col items-center">
-                                <div class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="activityMeta(item).color" />
-                                <div v-if="idx < activityFeed.length - 1" class="mt-1 w-px flex-1 bg-border" />
-                            </div>
-                            <div class="min-w-0 flex-1 pb-4">
-                                <div class="text-sm leading-snug">
-                                    <span class="font-medium">{{ item.actor }}</span>
-                                    <span class="text-muted-foreground">
-                                        {{ activityMeta(item).label.toLowerCase() }}
-                                    </span>
-                                </div>
-                                <Link v-if="item.usulan_id" :href="`/usulan/${item.usulan_id}`"
-                                    class="mt-0.5 block truncate text-xs font-medium text-primary hover:underline"
-                                >{{ item.no_usulan }} · {{ item.judul }}</Link>
-                                <div class="mt-1 text-[11px] text-muted-foreground">
-                                    {{ formatRelative(item.timestamp) }}
-                                </div>
-                            </div>
-                        </li>
-                    </ul>
+                            Menampilkan 6 dari {{ activityFeed.length }} aktivitas terbaru
+                        </div>
+                    </template>
                 </Section>
             </div>
         </div>

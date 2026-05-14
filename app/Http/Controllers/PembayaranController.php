@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Notifications\PengadaanKontrakNotification;
+use App\Notifications\UsulanDisetujuiNotification;
 
 class PembayaranController extends Controller
 {
@@ -36,7 +38,15 @@ class PembayaranController extends Controller
                 'penyedia:id,nama,nama_bank,rekening_bank',
                 'pembayaran:id,pengadaan_id,status,no_spm,no_sp2d,nilai_bayar,nilai_bersih,tanggal_bayar,updated_at',
             ])
-            ->whereHas('usulan', fn ($q) => $q->where('status', 'pembayaran'))
+            // ← SEBELUM: whereHas('usulan', fn ($q) => $q->where('status', 'pembayaran'))
+            // ← SESUDAH: dokumen sudah complete, pembayaran belum lunas atau belum ada
+            ->whereHas('dokumenUpbj', fn ($q) => $q->where('is_complete', true))
+            ->where(function ($q) {
+                $q->doesntHave('pembayaran')
+                  ->orWhereHas('pembayaran', fn ($pb) =>
+                      $pb->whereNotIn('status', ['lunas', 'batal'])
+                  );
+            })
             ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
                 $anggaran->where('tahun', $tahunAnggaran)
                     ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
@@ -44,7 +54,7 @@ class PembayaranController extends Controller
                     );
             })
             ->latest('id')
-            ->paginate(20)           // ← ganti dari ->get()
+            ->paginate(20)
             ->withQueryString();
  
         return Inertia::render('pembayaran/Index', [
@@ -57,15 +67,19 @@ class PembayaranController extends Controller
      */
     public function edit(Pengadaan $pengadaan): Response|RedirectResponse
     {
-        $pengadaan->load('usulan');
-
-        if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'pembayaran') {
+        $pengadaan->load('usulan', 'dokumenUpbj');
+ 
+        // ← SEBELUM:
+        // if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'pembayaran')
+        //
+        // ← SESUDAH: cek dokumen UPBJ sudah complete
+        if (! $pengadaan->dokumenUpbj?->is_complete) {
             return redirect()
                 ->route('pembayaran.index')
-                ->with('error', 'Pengadaan ini tidak dalam tahap pembayaran.');
+                ->with('error', 'Dokumen UPBJ pengadaan ini belum lengkap.');
         }
-
-        // Auto-create pembayaran record kalau belum ada, dengan default nilai = nilai_kontrak
+ 
+        // Auto-create pembayaran record kalau belum ada
         $pembayaran = Pembayaran::firstOrCreate(
             ['pengadaan_id' => $pengadaan->id],
             [
@@ -75,7 +89,7 @@ class PembayaranController extends Controller
                 'status'       => 'pending',
             ],
         );
-
+ 
         $pengadaan->load([
             'usulan:id,no_usulan,judul,total_estimasi,status,pemohon_id',
             'usulan.pemohon:id,name,unit_kerja_id',
@@ -84,7 +98,7 @@ class PembayaranController extends Controller
             'pejabat:id,name',
             'dokumenUpbj:id,pengadaan_id,no_bast,tanggal_bast',
         ]);
-
+ 
         return Inertia::render('pembayaran/Edit', [
             'pengadaan'  => $pengadaan,
             'pembayaran' => $pembayaran,
@@ -167,15 +181,18 @@ class PembayaranController extends Controller
                 'status'     => 'lunas',
                 'petugas_id' => $request->user()->id,
             ]);
- 
-            $pengadaan->usulan->update(['status' => 'evaluasi']);
+            // PengadaanObserver::updated() otomatis panggil usulan->refreshStatus()
+            $pengadaan->update(['status' => 'selesai']);
+            
+            // ← DIHAPUS: $pengadaan->usulan->update(['status' => 'evaluasi'])
+            // Perencanaan melihat paket dari pembayaran.status = 'lunas' + belum ada evaluasi
+            // Tidak perlu update usulan.status
         });
  
-        // ── ActivityLogger ───────────────────────────────────────────
         ActivityLogger::fromRequest(
             request:     $request,
             action:      'pembayaran.lunas',
-            description: "Pembayaran pengadaan {$pengadaan->no_pengadaan} lunas, diteruskan ke Perencanaan",
+            description: "Pembayaran pengadaan {$pengadaan->no_pengadaan} lunas, siap dievaluasi",
             usulanId:    $pengadaan->usulan?->id,
             subjectType: 'Pengadaan',
             subjectId:   $pengadaan->id,
@@ -185,18 +202,16 @@ class PembayaranController extends Controller
             ],
         );
  
-        // ── Notifikasi ke semua Perencanaan ──────────────────────────
         $perencanaan = \App\Models\User::query()
             ->whereHas('role', fn ($q) => $q->where('name', 'perencanaan'))
             ->where('is_active', true)
             ->get();
  
-        Notification::send($perencanaan, new PembayaranLunasNotification($pengadaan));
-        // ─────────────────────────────────────────────────────────────
+        \Illuminate\Support\Facades\Notification::send($perencanaan, new PembayaranLunasNotification($pengadaan));
  
         return redirect()
             ->route('pembayaran.index')
-            ->with('success', "Pembayaran pengadaan {$pengadaan->no_pengadaan} telah lunas. Diteruskan ke Bagian Perencanaan untuk evaluasi.");
+            ->with('success', "Pembayaran pengadaan {$pengadaan->no_pengadaan} telah lunas. Diteruskan ke Bagian Perencanaan.");
     }
 
     /**

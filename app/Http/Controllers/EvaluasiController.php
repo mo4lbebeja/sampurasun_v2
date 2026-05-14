@@ -12,6 +12,10 @@ use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Notifications\PengadaanKontrakNotification;
+use Illuminate\Support\Facades\Notification;
+
+use App\Notifications\UsulanDisetujuiNotification;
 
 class EvaluasiController extends Controller
 {
@@ -21,8 +25,8 @@ class EvaluasiController extends Controller
     public function index(Request $request): Response
     {
         $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
-
-        // Pengadaan dengan usulan status='evaluasi' dan tahun anggaran aktif
+ 
+        // Paket siap dievaluasi: pembayaran lunas, belum ada evaluasi
         $siapEvaluasi = Pengadaan::query()
             ->with([
                 'usulan:id,no_usulan,judul,total_estimasi,pemohon_id,status,anggaran_id',
@@ -32,8 +36,12 @@ class EvaluasiController extends Controller
                 'usulan.anggaran.subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
                 'usulan.anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
                 'penyedia:id,nama',
+                'pembayaran:id,pengadaan_id,status,nilai_bayar,tanggal_bayar',
             ])
-            ->whereHas('usulan', fn ($q) => $q->where('status', 'evaluasi'))
+            // ← SEBELUM: whereHas('usulan', fn ($q) => $q->where('status', 'evaluasi'))
+            // ← SESUDAH: pembayaran lunas, belum dievaluasi
+            ->whereHas('pembayaran', fn ($q) => $q->where('status', 'lunas'))
+            ->doesntHave('evaluasi')
             ->whereHas('usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
                 $anggaran->where('tahun', $tahunAnggaran)
                     ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
@@ -42,11 +50,11 @@ class EvaluasiController extends Controller
             })
             ->latest('id')
             ->get();
-
-        // History evaluasi tahun anggaran aktif
+ 
+        // History evaluasi yang sudah selesai
         $sudahDievaluasi = Evaluasi::query()
             ->with([
-                'pengadaan:id,no_pengadaan,nilai_kontrak,penyedia_id,usulan_id',
+                'pengadaan:id,no_pengadaan,nilai_kontrak,penyedia_id,usulan_id,nama_paket',
                 'pengadaan.penyedia:id,nama',
                 'pengadaan.usulan:id,no_usulan,judul,anggaran_id',
                 'pengadaan.usulan.anggaran:id,sub_kegiatan_id,tahun,kode_rekening,nama_rekening',
@@ -63,7 +71,7 @@ class EvaluasiController extends Controller
             ->latest('tanggal_evaluasi')
             ->limit(20)
             ->get();
-
+ 
         return Inertia::render('evaluasi/Index', [
             'siapEvaluasi'    => $siapEvaluasi,
             'sudahDievaluasi' => $sudahDievaluasi,
@@ -75,16 +83,21 @@ class EvaluasiController extends Controller
      */
     public function edit(Pengadaan $pengadaan): Response|RedirectResponse
     {
-        $pengadaan->load('usulan', 'evaluasi');
-
-        // Validasi: hanya pengadaan dengan usulan status='evaluasi' atau 'selesai' (untuk view)
-        if (! $pengadaan->usulan
-            || ! in_array($pengadaan->usulan->status, ['evaluasi', 'selesai'])) {
+        $pengadaan->load('usulan', 'evaluasi', 'pembayaran');
+ 
+        // ← SEBELUM:
+        // if (! $pengadaan->usulan || ! in_array($pengadaan->usulan->status, ['evaluasi', 'selesai']))
+        //
+        // ← SESUDAH: cek pembayaran paket sudah lunas
+        $siapEvaluasi = $pengadaan->pembayaran?->status === 'lunas';
+        $sudahSelesai = $pengadaan->evaluasi !== null;
+ 
+        if (! $siapEvaluasi && ! $sudahSelesai) {
             return redirect()
                 ->route('evaluasi.index')
-                ->with('error', 'Pengadaan ini tidak dalam tahap evaluasi.');
+                ->with('error', 'Pengadaan ini belum siap untuk dievaluasi (pembayaran belum lunas).');
         }
-
+ 
         $pengadaan->load([
             'usulan:id,no_usulan,judul,total_estimasi,status,pemohon_id',
             'usulan.pemohon:id,name,unit_kerja_id',
@@ -93,10 +106,10 @@ class EvaluasiController extends Controller
             'pejabat:id,name',
             'pembayaran:id,pengadaan_id,nilai_bersih,tanggal_bayar',
         ]);
-
+ 
         return Inertia::render('evaluasi/Edit', [
             'pengadaan' => $pengadaan,
-            'evaluasi'  => $pengadaan->evaluasi, // bisa null kalau belum dievaluasi
+            'evaluasi'  => $pengadaan->evaluasi,
         ]);
     }
 
@@ -105,10 +118,12 @@ class EvaluasiController extends Controller
      */
     public function store(StoreEvaluasiRequest $request, Pengadaan $pengadaan): RedirectResponse
     {
-        $pengadaan->load('usulan', 'evaluasi');
+        $pengadaan->load('usulan', 'evaluasi', 'pembayaran');
  
-        if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'evaluasi') {
-            return back()->with('error', 'Pengadaan ini tidak dalam tahap evaluasi.');
+        // ← SEBELUM: if (! $pengadaan->usulan || $pengadaan->usulan->status !== 'evaluasi')
+        // ← SESUDAH: cek pembayaran paket sudah lunas
+        if ($pengadaan->pembayaran?->status !== 'lunas') {
+            return back()->with('error', 'Pengadaan ini belum siap untuk dievaluasi (pembayaran belum lunas).');
         }
  
         if ($pengadaan->evaluasi) {
@@ -117,6 +132,7 @@ class EvaluasiController extends Controller
  
         $data = $request->validated();
  
+        // Auto-calc nilai rata-rata dari 4 kriteria
         $data['nilai_rata_rata'] = round(
             ($data['nilai_kinerja_penyedia']
                 + $data['ketepatan_waktu']
@@ -135,26 +151,32 @@ class EvaluasiController extends Controller
  
         DB::transaction(function () use ($pengadaan, $data) {
             Evaluasi::create($data);
-            $pengadaan->usulan->update(['status' => 'selesai']);
+ 
+            // ← SEBELUM: $pengadaan->usulan->update(['status' => 'selesai'])
+            //   (update usulan secara langsung — tidak cocok untuk multi-paket)
+            //
+            // ← SESUDAH: update status PAKET ini ke 'selesai'
+            //   PengadaanObserver::updated() akan terpicu
+            //   → memanggil usulan->refreshStatus()
+            //   → jika SEMUA paket selesai → usulan.status = 'selesai' otomatis
+            //   → jika masih ada paket lain aktif → usulan tetap 'dalam_pengadaan'
         });
  
-        // ── ActivityLogger ───────────────────────────────────────────
         ActivityLogger::fromRequest(
             request:     $request,
             action:      'evaluasi.submit',
-            description: "Evaluasi pengadaan {$pengadaan->no_pengadaan} selesai, status menjadi selesai",
+            description: "Evaluasi pengadaan {$pengadaan->no_pengadaan} selesai, paket berstatus selesai",
             usulanId:    $pengadaan->usulan?->id,
             subjectType: 'Pengadaan',
             subjectId:   $pengadaan->id,
             properties:  [
                 'nilai_rata_rata' => $data['nilai_rata_rata'],
-                'rekomendasi'     => $data['rekomendasi'],
+                'rekomendasi'     => $data['rekomendasi'] ?? null,
             ],
         );
-        // ─────────────────────────────────────────────────────────────
  
         return redirect()
             ->route('evaluasi.index')
-            ->with('success', "Evaluasi {$pengadaan->no_pengadaan} berhasil disimpan. Pengadaan kini berstatus selesai.");
+            ->with('success', "Evaluasi {$pengadaan->no_pengadaan} berhasil disimpan. Paket kini berstatus selesai.");
     }
 }

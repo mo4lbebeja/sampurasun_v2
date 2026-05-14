@@ -15,24 +15,28 @@ class StorePengadaanRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'metode' => ['required', Rule::in([
-                'pengadaan_langsung',
-                'penunjukan_langsung',
-                'tender',
-                'tender_cepat',
-                'e_purchasing',
-                'swakelola',
-            ])],
+            'metode'       => ['required', 'in:pengadaan_langsung,penunjukan_langsung,tender,tender_cepat,e_purchasing,swakelola'],
             'tanggal_mulai' => ['required', 'date'],
-            'catatan'       => ['nullable', 'string', 'max:1000'],
+            'catatan'      => ['nullable', 'string', 'max:1000'],
+ 
+            // ── Field baru untuk multi-paket ──────────────────────────
+            'nama_paket'   => ['nullable', 'string', 'max:200'],
+ 
+            // item_ids: opsional (kosong = tidak pakai item assignment)
+            // Jika diisi, setiap ID harus ada di tabel usulan_items
+            'item_ids'     => ['nullable', 'array'],
+            'item_ids.*'   => ['integer', 'exists:usulan_items,id'],
         ];
     }
-
+ 
     public function messages(): array
     {
         return [
-            'required' => 'Kolom :attribute wajib diisi.',
-            'in'       => 'Pilihan :attribute tidak valid.',
+            'metode.required'      => 'Metode pengadaan harus dipilih.',
+            'metode.in'            => 'Metode pengadaan tidak valid.',
+            'tanggal_mulai.required' => 'Tanggal mulai harus diisi.',
+            'tanggal_mulai.date'   => 'Format tanggal tidak valid.',
+            'item_ids.*.exists'    => 'Satu atau lebih item tidak ditemukan.',
         ];
     }
 

@@ -84,10 +84,29 @@ class DashboardController extends Controller
             ->whereIn('status', ['disetujui', 'dalam_pengadaan', 'dokumen', 'pembayaran'])
             ->count();
 
-        $selesaiBulanIni = (clone $usulanQuery)
-            ->where('status', 'selesai')
-            ->whereYear('updated_at', $tahunAnggaran)
-            ->whereMonth('updated_at', now()->month)
+        $selesaiBulanIni = Pembayaran::query()
+            ->where('status', 'lunas')
+            ->whereYear(
+                \Illuminate\Support\Facades\DB::raw('COALESCE(tanggal_bayar, updated_at)'),
+                now()->year
+            )
+            ->whereMonth(
+                \Illuminate\Support\Facades\DB::raw('COALESCE(tanggal_bayar, updated_at)'),
+                now()->month
+            )
+            ->whereHas('pengadaan.usulan', function ($query) use ($user) {
+                if (! $user->hasRole('admin')) {
+                    $query->whereHas('pemohon', function ($q) use ($user) {
+                        $q->where('unit_kerja_id', $user->unit_kerja_id);
+                    });
+                }
+            })
+            ->whereHas('pengadaan.usulan.anggaran', function ($anggaran) use ($tahunAnggaran) {
+                $anggaran->where('tahun', $tahunAnggaran)
+                    ->orWhereHas('subKegiatan.dpaAnggaran', function ($dpa) use ($tahunAnggaran) {
+                        $dpa->where('tahun_anggaran', $tahunAnggaran);
+                    });
+            })
             ->count();
 
         $totalEstimasi = (clone $usulanQuery)
@@ -170,7 +189,7 @@ class DashboardController extends Controller
             ->values();
 
         // ── Activity feed ───────────────────────────────────────────
-        $activityFeed = ActivityLog::query()
+                $activityFeed = ActivityLog::query()
             ->with([
                 'user:id,name,role_id',
                 'user.role:id,name,display_name',
@@ -210,7 +229,10 @@ class DashboardController extends Controller
                 'actor'       => $log->user?->name ?? '—',
                 'no_usulan'   => $log->usulan?->no_usulan,
                 'judul'       => $log->usulan?->judul,
-                'created_at'  => $log->created_at?->toISOString(),
+                'usulan_id'   => $log->usulan_id,
+                // ← SEBELUM: 'created_at' => $log->created_at?->toISOString()
+                // ← SESUDAH: 'timestamp'  → sesuai dengan type di Dashboard.vue
+                'timestamp'   => $log->created_at?->toISOString(),
             ])
             ->values()
             ->toArray();
@@ -234,10 +256,65 @@ class DashboardController extends Controller
             ])
             ->toArray();
 
+        // Workflow counts per tahap — berdasarkan kondisi paket, bukan usulan.status
+        $anggaranScope = function ($q) use ($tahunAnggaran) {
+            $q->where('tahun', $tahunAnggaran)
+            ->orWhereHas('subKegiatan.dpaAnggaran', fn ($d) =>
+                $d->where('tahun_anggaran', $tahunAnggaran)
+            );
+        };
+
+        $workflowCounts = [
+            // Tahap 1: Usulan masuk (draft + diajukan)
+            'usulan' => (clone $usulanQuery)
+                ->whereIn('status', ['draft', 'diajukan'])
+                ->count(),
+
+            // Tahap 2: Menunggu approval PPTK
+            'approval' => (clone $usulanQuery)
+                ->where('status', 'diajukan')
+                ->count(),
+
+            // Tahap 3: Pengadaan sedang diproses (negosiasi/proses)
+            'pengadaan' => Pengadaan::query()
+                ->where('status', 'proses')
+                ->whereHas('usulan.anggaran', $anggaranScope)
+                ->count(),
+
+            // Tahap 4: Dokumen UPBJ — kontrak sudah, dokumen belum selesai
+            'dokumen' => Pengadaan::query()
+                ->where('status', 'kontrak')
+                ->where(function ($q) {
+                    $q->doesntHave('dokumenUpbj')
+                    ->orWhereHas('dokumenUpbj', fn ($d) => $d->where('is_complete', false));
+                })
+                ->whereHas('usulan.anggaran', $anggaranScope)
+                ->count(),
+
+            // Tahap 5: Pembayaran — dokumen selesai, belum lunas
+            'pembayaran' => Pengadaan::query()
+                ->whereHas('dokumenUpbj', fn ($q) => $q->where('is_complete', true))
+                ->where(function ($q) {
+                    $q->doesntHave('pembayaran')
+                    ->orWhereHas('pembayaran', fn ($pb) =>
+                        $pb->whereNotIn('status', ['lunas', 'batal'])
+                    );
+                })
+                ->whereHas('usulan.anggaran', $anggaranScope)
+                ->count(),
+
+            // Card 6: Selesai = pembayaran sudah lunas
+            'evaluasi' => Pengadaan::query()
+                ->whereHas('pembayaran', fn ($q) => $q->where('status', 'lunas'))
+                ->whereHas('usulan.anggaran', $anggaranScope)
+                ->count(),
+        ];
+
         return Inertia::render('Dashboard', [
             'stats'              => $stats,
             'recentUsulan'       => $recentUsulan,
             'statusDistribution' => $statusDistribution,
+            'workflowCounts'     => $workflowCounts,
             'activityFeed'       => $activityFeed,        // ← PERBAIKAN: pakai variabel, bukan []
             'metodeDistribution' => $metodeDistribution,  // ← PERBAIKAN: pakai variabel, bukan []
             'roleData'           => ['role' => $user->role?->name ?? ''],

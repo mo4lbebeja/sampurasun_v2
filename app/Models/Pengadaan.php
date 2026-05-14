@@ -1,35 +1,17 @@
 <?php
-// ================================================================
-// File: app/Models/Pengadaan.php  — VERSI DIPERBAIKI
-//
-// Perubahan dari file kemarin:
-// - Tambah: pejabat_id, no_pengadaan, status ke $fillable
-//   Alasan: ketiganya di-set oleh KODE APLIKASI (bukan dari request user)
-//   di PengadaanController::start() dan updateKontrak()
-// - Hapus: relasi duplikat dokumen() — hanya tinggal dokumenUpbj()
-// ================================================================
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Pengadaan extends Model
 {
     protected $table = 'pengadaan';
 
-    /**
-     * Kolom yang boleh diisi via mass assignment.
-     *
-     * Prinsip: semua kolom BOLEH kecuali `id` dan kolom yang
-     * tidak pernah di-set lewat create()/update() di controller manapun.
-     *
-     * Kolom `status` aman di $fillable karena selalu di-set oleh
-     * kode aplikasi (hardcoded), BUKAN dari $request->validated().
-     * Kolom `no_pengadaan` aman karena di-generate oleh DocumentNumberService.
-     */
     protected $fillable = [
         'usulan_id',
         'pejabat_id',
@@ -37,6 +19,8 @@ class Pengadaan extends Model
         'kpa_penandatangan_id',
         'penyedia_id',
         'no_pengadaan',
+        'nama_paket',       // ← kolom baru
+        'estimasi_paket',   // ← kolom baru
         'metode',
         'tanggal_mulai',
         'tanggal_selesai',
@@ -50,10 +34,11 @@ class Pengadaan extends Model
     ];
 
     protected $casts = [
-        'tanggal_kontrak' => 'date',
-        'tanggal_mulai'   => 'date',
-        'tanggal_selesai' => 'date',
-        'nilai_kontrak'   => 'decimal:2',
+        'tanggal_kontrak'  => 'date',
+        'tanggal_mulai'    => 'date',
+        'tanggal_selesai'  => 'date',
+        'nilai_kontrak'    => 'decimal:2',
+        'estimasi_paket'   => 'decimal:2',
     ];
 
     // ── Relasi ──────────────────────────────────────────────────
@@ -83,10 +68,6 @@ class Pengadaan extends Model
         return $this->belongsTo(User::class, 'kpa_penandatangan_id');
     }
 
-    /**
-     * Relasi dokumen UPBJ — nama tunggal.
-     * Relasi duplikat dokumen() sudah dihapus.
-     */
     public function dokumenUpbj(): HasOne
     {
         return $this->hasOne(DokumenUpbj::class, 'pengadaan_id');
@@ -105,5 +86,38 @@ class Pengadaan extends Model
     public function evaluasi(): HasOne
     {
         return $this->hasOne(Evaluasi::class, 'pengadaan_id');
+    }
+
+    /**
+     * Item assignments — relasi ke tabel pivot pengadaan_item_assignments.
+     */
+    public function itemAssignments(): HasMany
+    {
+        return $this->hasMany(PengadaanItemAssignment::class, 'pengadaan_id');
+    }
+
+    /**
+     * Item usulan yang masuk ke paket pengadaan ini,
+     * melalui pivot pengadaan_item_assignments.
+     */
+    public function usulanItems(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            UsulanItem::class,
+            'pengadaan_item_assignments',
+            'pengadaan_id',
+            'usulan_item_id'
+        )->withTimestamps();
+    }
+
+    // ── Helper methods ───────────────────────────────────────────
+
+    /**
+     * Label paket untuk ditampilkan di UI.
+     * Jika nama_paket diisi, tampilkan itu. Kalau tidak, fallback ke no_pengadaan.
+     */
+    public function labelPaket(): string
+    {
+        return $this->nama_paket ?: $this->no_pengadaan;
     }
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import {
     ArrowLeft,
+    ArrowRight,
     FileText,
     Calendar,
     User,
@@ -13,6 +14,8 @@ import {
     CheckCircle2,
     XCircle,
     RotateCcw,
+    PlusCircle,
+    X,
 } from 'lucide-vue-next';
 
 import PageHeader from '@/components/ev/PageHeader.vue';
@@ -20,6 +23,8 @@ import Section from '@/components/ev/Section.vue';
 import StatusBadge from '@/components/ev/StatusBadge.vue';
 import EmptyState from '@/components/ev/EmptyState.vue';
 import PrimaryButton from '@/components/ev/PrimaryButton.vue';
+
+// ── Types ──────────────────────────────────────────────────────────
 
 type Item = {
     id: number;
@@ -38,6 +43,16 @@ type Approval = {
     catatan: string | null;
     tanggal_keputusan: string;
     approver: { id: number; name: string; jabatan: string | null } | null;
+};
+
+type PaketPengadaan = {
+    id: number;
+    no_pengadaan: string;
+    nama_paket: string | null;
+    status: string;
+    metode: string;
+    estimasi_paket: string | number;
+    nilai_kontrak: string | number;
 };
 
 type Usulan = {
@@ -64,17 +79,24 @@ type Usulan = {
     } | null;
     items: Item[];
     approvals: Approval[];
-    pengadaan: {
-        id: number;
-        penyedia: { id: number; nama: string } | null;
-    } | null;
 };
 
-const props = defineProps<{ usulan: Usulan }>();
+// ── Props ──────────────────────────────────────────────────────────
 
-// =====================
-// User & approval logic
-// =====================
+const props = withDefaults(
+    defineProps<{
+        usulan: Usulan;
+        pengadaanList?: PaketPengadaan[];
+        itemsAssignedIds?: number[];
+    }>(),
+    {
+        pengadaanList: () => [],
+        itemsAssignedIds: () => [],
+    },
+);
+
+// ── User & approval logic ──────────────────────────────────────────
+
 const page = usePage();
 const userRole = computed(() => page.props.auth.user?.role);
 const isAdmin = computed(() => page.props.auth.user?.is_admin === true);
@@ -95,7 +117,7 @@ const showCatatan = computed(() =>
 const submitDecision = () => {
     if (!approvalForm.keputusan) return;
 
-    const labels = {
+    const labels: Record<string, string> = {
         disetujui: 'menyetujui',
         ditolak: 'menolak',
         revisi: 'meminta revisi',
@@ -108,19 +130,49 @@ const submitDecision = () => {
     });
 };
 
-// =====================
-// Pengadaan logic
-// =====================
-const canStartPengadaan = computed(() =>
-    (userRole.value === 'pejabat_pengadaan' || isAdmin.value)
-        && props.usulan.status === 'disetujui'
+// ── Pengadaan logic — multi-paket ─────────────────────────────────
+
+const assignedIds = computed(() => props.itemsAssignedIds ?? []);
+
+const itemsBelumDipaket = computed(() =>
+    (props.usulan.items ?? []).filter((item) => !assignedIds.value.includes(item.id))
 );
 
-const pengadaanForm = useForm({
-    metode: 'pengadaan_langsung' as string,
+const canCreatePaket = computed(() =>
+    (userRole.value === 'pejabat_pengadaan' || isAdmin.value) &&
+    (props.usulan.status === 'disetujui' ||
+        (props.usulan.status === 'dalam_pengadaan' && itemsBelumDipaket.value.length > 0))
+);
+
+const paketForm = useForm({
+    nama_paket:    '',
+    metode:        'pengadaan_langsung' as string,
     tanggal_mulai: new Date().toISOString().slice(0, 10),
-    catatan: '',
+    catatan:       '',
+    item_ids:      [] as number[],
 });
+
+const selectAllItems = ref(false);
+
+watch(selectAllItems, (val) => {
+    paketForm.item_ids = val
+        ? itemsBelumDipaket.value.map((i) => i.id)
+        : [];
+});
+
+watch(() => paketForm.item_ids, (ids) => {
+    selectAllItems.value =
+        itemsBelumDipaket.value.length > 0 &&
+        ids.length === itemsBelumDipaket.value.length;
+});
+
+const estimasiDipilih = computed(() =>
+    (props.usulan.items ?? [])
+        .filter((i) => paketForm.item_ids.includes(i.id))
+        .reduce((sum, i) => sum + Number(i.subtotal ?? 0), 0)
+);
+
+const showPaketForm = ref(false);
 
 const metodeOptions = [
     { value: 'pengadaan_langsung',  label: 'Pengadaan Langsung'  },
@@ -131,16 +183,24 @@ const metodeOptions = [
     { value: 'swakelola',           label: 'Swakelola'           },
 ];
 
-const startPengadaan = () => {
-    if (!confirm('Yakin mulai proses pengadaan untuk usulan ini?')) return;
-    pengadaanForm.post(`/usulan/${props.usulan.id}/pengadaan`, {
+const submitPaket = () => {
+    if (itemsBelumDipaket.value.length > 0 && paketForm.item_ids.length === 0) {
+        alert('Pilih minimal satu item untuk paket ini.');
+        return;
+    }
+
+    paketForm.post(`/usulan/${props.usulan.id}/pengadaan`, {
         preserveScroll: true,
+        onSuccess: () => {
+            showPaketForm.value = false;
+            paketForm.reset();
+            selectAllItems.value = false;
+        },
     });
 };
 
-// =====================
-// Format helpers
-// =====================
+// ── Format helpers ─────────────────────────────────────────────────
+
 const formatRupiah = (val: string | number) =>
     new Intl.NumberFormat('id-ID', {
         style: 'currency',
@@ -151,26 +211,23 @@ const formatRupiah = (val: string | number) =>
 const formatDate = (val: string | null) => {
     if (!val) return '—';
     return new Date(val).toLocaleDateString('id-ID', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
+        day: '2-digit', month: 'long', year: 'numeric',
     });
 };
 
 const formatDateTime = (val: string | null) => {
     if (!val) return '—';
     return new Date(val).toLocaleString('id-ID', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
     });
 };
 
-// =====================
-// Workflow timeline
-// =====================
+const formatMetode = (val: string) =>
+    val.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+// ── Workflow timeline ──────────────────────────────────────────────
+
 const workflowSteps = [
     { num: 1, name: 'Usulan',     role: 'Sarana & Umum' },
     { num: 2, name: 'Approval',   role: 'PPTK' },
@@ -204,7 +261,8 @@ const stepStatus = (idx: number): 'done' | 'active' | 'pending' => {
     <Head :title="`Detail ${usulan.no_usulan}`" />
 
     <div class="space-y-6 p-4 sm:p-6 lg:p-8">
-        <!-- Header dengan back -->
+
+        <!-- Header -->
         <div class="flex items-start gap-3">
             <Link
                 href="/usulan"
@@ -221,7 +279,7 @@ const stepStatus = (idx: number): 'done' | 'active' | 'pending' => {
             </div>
         </div>
 
-        <!-- ⭐ PANEL APPROVAL (PPTK saat status diajukan) -->
+        <!-- ── Panel Approval (PPTK) ─────────────────────────────── -->
         <Section
             v-if="canDecide"
             class="border-2"
@@ -251,401 +309,398 @@ const stepStatus = (idx: number): 'done' | 'active' | 'pending' => {
                         type="button"
                         @click="approvalForm.keputusan = 'disetujui'"
                         class="flex items-center justify-center gap-2 rounded-md border-2 bg-card px-4 py-3 text-sm font-semibold transition"
-                        :class="
-                            approvalForm.keputusan === 'disetujui'
-                                ? '!border-[var(--color-brand-success)] !bg-[var(--color-brand-success-bg)] !text-[var(--color-brand-success)]'
-                                : 'border-border hover:border-[var(--color-brand-success)]'
-                        "
+                        :class="approvalForm.keputusan === 'disetujui'
+                            ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
+                            : 'border-border hover:border-green-400'"
                     >
                         <CheckCircle2 class="h-4 w-4" />
                         Setujui
                     </button>
                     <button
                         type="button"
-                        @click="approvalForm.keputusan = 'revisi'"
-                        class="flex items-center justify-center gap-2 rounded-md border-2 bg-card px-4 py-3 text-sm font-semibold transition"
-                        :class="
-                            approvalForm.keputusan === 'revisi'
-                                ? '!border-[var(--color-brand-warning)] !bg-[var(--color-brand-warning-bg)] !text-[var(--color-brand-warning)]'
-                                : 'border-border hover:border-[var(--color-brand-warning)]'
-                        "
-                    >
-                        <RotateCcw class="h-4 w-4" />
-                        Minta Revisi
-                    </button>
-                    <button
-                        type="button"
                         @click="approvalForm.keputusan = 'ditolak'"
                         class="flex items-center justify-center gap-2 rounded-md border-2 bg-card px-4 py-3 text-sm font-semibold transition"
-                        :class="
-                            approvalForm.keputusan === 'ditolak'
-                                ? '!border-[var(--color-brand-danger)] !bg-[var(--color-brand-danger-bg)] !text-[var(--color-brand-danger)]'
-                                : 'border-border hover:border-[var(--color-brand-danger)]'
-                        "
+                        :class="approvalForm.keputusan === 'ditolak'
+                            ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300'
+                            : 'border-border hover:border-red-400'"
                     >
                         <XCircle class="h-4 w-4" />
                         Tolak
                     </button>
+                    <button
+                        type="button"
+                        @click="approvalForm.keputusan = 'revisi'"
+                        class="flex items-center justify-center gap-2 rounded-md border-2 bg-card px-4 py-3 text-sm font-semibold transition"
+                        :class="approvalForm.keputusan === 'revisi'
+                            ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                            : 'border-border hover:border-amber-400'"
+                    >
+                        <RotateCcw class="h-4 w-4" />
+                        Minta Revisi
+                    </button>
                 </div>
 
-                <p v-if="approvalForm.errors.keputusan" class="text-xs text-destructive">
-                    {{ approvalForm.errors.keputusan }}
-                </p>
-
                 <div v-if="showCatatan">
-                    <label class="mb-1.5 block text-sm font-semibold">
-                        Catatan <span class="text-destructive">*</span>
-                    </label>
+                    <label class="text-eyebrow mb-1 block">Catatan (wajib)</label>
                     <textarea
                         v-model="approvalForm.catatan"
                         rows="3"
-                        placeholder="Jelaskan alasan penolakan atau hal yang perlu direvisi..."
-                        class="w-full rounded-md border border-input bg-card px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        :class="{ 'border-destructive': approvalForm.errors.catatan }"
+                        class="input w-full"
+                        placeholder="Jelaskan alasan penolakan atau permintaan revisi..."
                     />
                     <p v-if="approvalForm.errors.catatan" class="mt-1 text-xs text-destructive">
                         {{ approvalForm.errors.catatan }}
                     </p>
                 </div>
 
-                <div v-else-if="approvalForm.keputusan === 'disetujui'">
-                    <label class="mb-1.5 block text-sm font-semibold">
-                        Catatan <span class="text-muted-foreground">(opsional)</span>
-                    </label>
-                    <textarea
-                        v-model="approvalForm.catatan"
-                        rows="2"
-                        placeholder="Catatan tambahan saat menyetujui (opsional)..."
-                        class="w-full rounded-md border border-input bg-card px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
+                <div class="flex justify-end">
+                    <PrimaryButton
+                        type="button"
+                        :disabled="!approvalForm.keputusan || approvalForm.processing"
+                        @click="submitDecision"
+                    >
+                        {{ approvalForm.processing ? 'Memproses...' : 'Kirim Keputusan' }}
+                    </PrimaryButton>
                 </div>
-
-                <PrimaryButton
-                    v-if="approvalForm.keputusan"
-                    type="button"
-                    variant="primary"
-                    size="lg"
-                    :disabled="approvalForm.processing"
-                    class="w-full sm:w-auto"
-                    @click="submitDecision"
-                >
-                    {{ approvalForm.processing ? 'Memproses...' : 'Kirim Keputusan' }}
-                </PrimaryButton>
             </div>
         </Section>
 
-        <!-- ⭐ PANEL MULAI PENGADAAN (Pejabat Pengadaan saat disetujui) -->
-        <Section
-            v-if="canStartPengadaan"
-            class="border-2"
-            style="border-color: var(--color-brand-info); background-color: var(--color-brand-info-bg);"
-        >
-            <div class="space-y-4">
-                <div class="flex items-start gap-3">
-                    <div
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white"
-                        style="background-color: var(--color-brand-info);"
-                    >
-                        <ShoppingCart class="h-5 w-5" />
+        <!-- ── Info Usulan ────────────────────────────────────────── -->
+        <Section title="Informasi Usulan" eyebrow="Detail">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <div class="text-eyebrow">Nomor Usulan</div>
+                    <div class="mt-0.5 font-mono text-sm">{{ usulan.no_usulan }}</div>
+                </div>
+                <div>
+                    <div class="text-eyebrow">Tanggal Usulan</div>
+                    <div class="mt-0.5 text-sm">{{ formatDate(usulan.tanggal_usulan) }}</div>
+                </div>
+                <div>
+                    <div class="text-eyebrow">Pemohon</div>
+                    <div class="mt-0.5 text-sm font-medium">{{ usulan.pemohon?.name ?? '—' }}</div>
+                    <div class="text-xs text-muted-foreground">
+                        {{ usulan.pemohon?.jabatan }} · {{ usulan.pemohon?.unit_kerja?.nama }}
                     </div>
-                    <div>
-                        <div class="text-eyebrow">Tindakan Pengadaan</div>
-                        <h2 class="font-display text-xl font-semibold" style="color: var(--color-brand-info);">
-                            Usulan Disetujui — Siap Dimulai Pengadaan
-                        </h2>
-                        <p class="mt-1 text-sm" style="color: var(--color-brand-info);">
-                            Pilih metode pengadaan yang sesuai untuk memulai proses.
-                        </p>
+                </div>
+                <div>
+                    <div class="text-eyebrow">Pos Anggaran</div>
+                    <div class="mt-0.5 font-mono text-xs">{{ usulan.anggaran?.kode_rekening }}</div>
+                    <div class="text-sm">{{ usulan.anggaran?.nama_rekening }}</div>
+                </div>
+                <div v-if="usulan.latar_belakang" class="sm:col-span-2">
+                    <div class="text-eyebrow">Latar Belakang</div>
+                    <p class="mt-0.5 whitespace-pre-line text-sm">{{ usulan.latar_belakang }}</p>
+                </div>
+                <div v-if="usulan.keterangan" class="sm:col-span-2">
+                    <div class="text-eyebrow">Keterangan</div>
+                    <p class="mt-0.5 whitespace-pre-line text-sm">{{ usulan.keterangan }}</p>
+                </div>
+            </div>
+        </Section>
+
+        <!-- ── Detail Barang/Jasa ─────────────────────────────────── -->
+        <Section
+            title="Detail Barang/Jasa"
+            eyebrow="Item Usulan"
+            :description="`${usulan.items.length} item · Total ${formatRupiah(usulan.total_estimasi)}`"
+        >
+            <EmptyState
+                v-if="usulan.items.length === 0"
+                title="Belum ada item"
+                :icon="ShoppingCart"
+            />
+            <div v-else class="-mx-6 -my-6 divide-y divide-border">
+                <div
+                    v-for="item in usulan.items"
+                    :key="item.id"
+                    class="flex items-start gap-3 px-6 py-3"
+                    :class="assignedIds.includes(item.id) ? 'opacity-50' : ''"
+                >
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium">{{ item.nama_barang }}</span>
+                            <span
+                                v-if="assignedIds.includes(item.id)"
+                                class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+                            >
+                                Sudah dipaketkan
+                            </span>
+                        </div>
+                        <div class="mt-0.5 text-xs text-muted-foreground">
+                            {{ item.kategori?.nama }} ·
+                            {{ item.jumlah }} {{ item.satuan }} ·
+                            {{ formatRupiah(item.harga_satuan_estimasi) }}/{{ item.satuan }}
+                        </div>
+                        <div v-if="item.spesifikasi" class="mt-1 text-xs text-muted-foreground">
+                            {{ item.spesifikasi }}
+                        </div>
+                    </div>
+                    <div class="shrink-0 font-mono text-sm font-medium">
+                        {{ formatRupiah(item.subtotal) }}
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <!-- Total -->
+                <div class="flex items-center justify-between px-6 py-3">
+                    <span class="text-sm font-semibold">Total Estimasi</span>
+                    <span class="font-mono text-sm font-semibold">
+                        {{ formatRupiah(usulan.total_estimasi) }}
+                    </span>
+                </div>
+            </div>
+        </Section>
+
+        <!-- ── Paket Pengadaan ────────────────────────────────────── -->
+        <Section
+            v-if="canCreatePaket || pengadaanList.length > 0"
+            title="Paket Pengadaan"
+            eyebrow="Pejabat Pengadaan"
+            :description="pengadaanList.length
+                ? `${pengadaanList.length} paket dari usulan ini`
+                : 'Belum ada paket pengadaan'"
+        >
+            <!-- Daftar paket yang sudah ada -->
+            <div v-if="pengadaanList.length > 0" class="-mx-6 -mt-6 mb-0 divide-y divide-border">
+                <Link
+                    v-for="paket in pengadaanList"
+                    :key="paket.id"
+                    :href="`/pengadaan/${paket.id}`"
+                    class="flex items-center gap-4 px-6 py-3 transition hover:bg-muted/30"
+                >
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-mono text-xs text-muted-foreground">
+                                {{ paket.no_pengadaan }}
+                            </span>
+                            <StatusBadge :status="paket.status" />
+                        </div>
+                        <div class="mt-0.5 text-sm font-medium">
+                            {{ paket.nama_paket || '(Tanpa nama paket)' }}
+                        </div>
+                        <div class="mt-0.5 text-xs text-muted-foreground">
+                            {{ formatMetode(paket.metode) }} ·
+                            <template v-if="Number(paket.nilai_kontrak) > 0">
+                                Kontrak {{ formatRupiah(paket.nilai_kontrak) }}
+                            </template>
+                            <template v-else>
+                                Estimasi {{ formatRupiah(paket.estimasi_paket) }}
+                            </template>
+                        </div>
+                    </div>
+                    <ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>
+            </div>
+
+            <!-- Tombol buat paket baru -->
+            <div
+                v-if="canCreatePaket && !showPaketForm"
+                :class="pengadaanList.length > 0 ? 'border-t border-border -mx-6 px-6 py-4' : '-mx-6 -mb-6 px-6 py-4'"
+            >
+                <button
+                    type="button"
+                    class="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border py-3 text-sm text-muted-foreground transition hover:border-primary hover:text-primary"
+                    @click="showPaketForm = true"
+                >
+                    <PlusCircle class="h-4 w-4" />
+                    Buat Paket Pengadaan Baru
+                    <template v-if="itemsBelumDipaket.length > 0">
+                        ({{ itemsBelumDipaket.length }} item belum dipaketkan)
+                    </template>
+                </button>
+            </div>
+
+            <!-- Form buat paket baru -->
+            <form
+                v-if="canCreatePaket && showPaketForm"
+                class="-mx-6 -mb-6 border-t border-border px-6 pb-6 pt-5 space-y-4"
+                @submit.prevent="submitPaket"
+            >
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium">Paket Baru</span>
+                    <button type="button" @click="showPaketForm = false; paketForm.reset(); selectAllItems = false">
+                        <X class="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                    </button>
+                </div>
+
+                <!-- Nama paket -->
+                <div>
+                    <label class="text-eyebrow mb-1 block">Nama Paket</label>
+                    <input
+                        v-model="paketForm.nama_paket"
+                        type="text"
+                        placeholder="Misal: Paket ATK, Paket Komputer & Printer"
+                        class="input w-full"
+                    />
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        Kosongkan jika satu usulan hanya satu paket.
+                    </p>
+                </div>
+
+                <!-- Metode + Tanggal -->
+                <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="mb-1.5 block text-sm font-semibold">
-                            Metode Pengadaan <span class="text-destructive">*</span>
-                        </label>
-                        <select
-                            v-model="pengadaanForm.metode"
-                            class="h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        >
+                        <label class="text-eyebrow mb-1 block">Metode Pengadaan</label>
+                        <select v-model="paketForm.metode" class="input w-full">
                             <option v-for="opt in metodeOptions" :key="opt.value" :value="opt.value">
                                 {{ opt.label }}
                             </option>
                         </select>
                     </div>
                     <div>
-                        <label class="mb-1.5 block text-sm font-semibold">
-                            Tanggal Mulai <span class="text-destructive">*</span>
-                        </label>
-                        <input
-                            v-model="pengadaanForm.tanggal_mulai"
-                            type="date"
-                            class="h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="mb-1.5 block text-sm font-semibold">
-                            Catatan <span class="text-muted-foreground">(opsional)</span>
-                        </label>
-                        <textarea
-                            v-model="pengadaanForm.catatan"
-                            rows="2"
-                            placeholder="Catatan untuk proses pengadaan..."
-                            class="w-full rounded-md border border-input bg-card px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <label class="text-eyebrow mb-1 block">Tanggal Mulai</label>
+                        <input v-model="paketForm.tanggal_mulai" type="date" class="input w-full" />
                     </div>
                 </div>
 
-                <PrimaryButton
-                    type="button"
-                    variant="primary"
-                    size="lg"
-                    :disabled="pengadaanForm.processing"
-                    class="w-full sm:w-auto"
-                    @click="startPengadaan"
-                >
-                    <ShoppingCart class="h-4 w-4" />
-                    {{ pengadaanForm.processing ? 'Memproses...' : 'Mulai Pengadaan' }}
-                </PrimaryButton>
-            </div>
-        </Section>
+                <!-- Pilih item -->
+                <div v-if="itemsBelumDipaket.length > 0">
+                    <label class="text-eyebrow mb-2 block">Item yang Masuk Paket Ini</label>
 
-        <!-- Workflow timeline -->
-        <Section title="Tahap Workflow" eyebrow="Status">
-            <div class="overflow-x-auto">
-                <div class="flex min-w-max items-stretch gap-2 lg:min-w-0">
-                    <template v-for="(step, idx) in workflowSteps" :key="step.num">
-                        <div
-                            class="flex min-w-[140px] flex-1 items-center gap-2.5 rounded-md border p-3 transition"
-                            :class="{
-                                'border-primary bg-primary/5': stepStatus(idx) === 'active',
-                                'border-[var(--color-brand-success)] bg-[var(--color-brand-success-bg)]': stepStatus(idx) === 'done',
-                                'border-border bg-secondary/30': stepStatus(idx) === 'pending',
-                            }"
+                    <label class="mb-2 flex items-center gap-2 text-sm">
+                        <input v-model="selectAllItems" type="checkbox" class="h-4 w-4" />
+                        <span class="font-medium">
+                            Pilih semua ({{ itemsBelumDipaket.length }} item)
+                        </span>
+                    </label>
+
+                    <div class="divide-y divide-border rounded-md border border-border">
+                        <label
+                            v-for="item in itemsBelumDipaket"
+                            :key="item.id"
+                            class="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-muted/20"
                         >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-sm font-semibold"
-                                :class="{
-                                    'bg-primary text-primary-foreground': stepStatus(idx) === 'active',
-                                    'bg-[var(--color-brand-success)] text-white': stepStatus(idx) === 'done',
-                                    'bg-card text-muted-foreground ring-1 ring-border': stepStatus(idx) === 'pending',
-                                }"
-                            >
-                                {{ stepStatus(idx) === 'done' ? '✓' : step.num }}
-                            </div>
+                            <input
+                                v-model="paketForm.item_ids"
+                                type="checkbox"
+                                :value="item.id"
+                                class="mt-0.5 h-4 w-4 flex-shrink-0"
+                            />
                             <div class="min-w-0 flex-1">
-                                <div
-                                    class="truncate text-sm font-semibold"
-                                    :class="{
-                                        'text-primary': stepStatus(idx) === 'active',
-                                        'text-[var(--color-brand-success)]': stepStatus(idx) === 'done',
-                                        'text-muted-foreground': stepStatus(idx) === 'pending',
-                                    }"
-                                >
-                                    {{ step.name }}
-                                </div>
-                                <div class="truncate text-[10px] uppercase tracking-wider text-muted-foreground">
-                                    {{ step.role }}
+                                <div class="text-sm font-medium">{{ item.nama_barang }}</div>
+                                <div class="text-xs text-muted-foreground">
+                                    {{ item.jumlah }} {{ item.satuan }} ·
+                                    {{ formatRupiah(item.harga_satuan_estimasi) }}/{{ item.satuan }}
+                                    · Subtotal {{ formatRupiah(item.subtotal) }}
                                 </div>
                             </div>
-                        </div>
-                        <div
-                            v-if="idx < workflowSteps.length - 1"
-                            class="hidden shrink-0 items-center text-border lg:flex"
-                        >
-                            →
-                        </div>
-                    </template>
-                </div>
-            </div>
-        </Section>
+                        </label>
+                    </div>
 
-        <!-- Info grid: Pemohon + Anggaran -->
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Section title="Informasi Pemohon" eyebrow="Identitas">
-                <dl class="space-y-3.5">
-                    <div class="flex items-start gap-3">
-                        <User class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div>
-                            <dt class="text-eyebrow">Nama Pemohon</dt>
-                            <dd class="text-sm font-medium">{{ usulan.pemohon?.name ?? '—' }}</dd>
-                            <dd v-if="usulan.pemohon?.jabatan" class="text-xs text-muted-foreground">
-                                {{ usulan.pemohon.jabatan }}
-                            </dd>
+                    <div v-if="paketForm.item_ids.length > 0" class="mt-3 rounded-md bg-muted/30 px-4 py-3">
+                        <div class="text-eyebrow">Estimasi Paket Ini</div>
+                        <div class="mt-0.5 font-mono text-lg font-semibold">
+                            {{ formatRupiah(estimasiDipilih) }}
                         </div>
-                    </div>
-                    <div class="flex items-start gap-3">
-                        <Building2 class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div>
-                            <dt class="text-eyebrow">Unit Kerja</dt>
-                            <dd class="text-sm font-medium">{{ usulan.pemohon?.unit_kerja?.nama ?? '—' }}</dd>
-                        </div>
-                    </div>
-                    <div class="flex items-start gap-3">
-                        <Calendar class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div>
-                            <dt class="text-eyebrow">Tanggal Usulan</dt>
-                            <dd class="text-sm font-medium">{{ formatDate(usulan.tanggal_usulan) }}</dd>
-                            <dd v-if="usulan.submitted_at" class="text-xs text-muted-foreground">
-                                Diajukan {{ formatDateTime(usulan.submitted_at) }}
-                            </dd>
-                        </div>
-                    </div>
-                </dl>
-            </Section>
-
-            <Section title="Sumber Anggaran" eyebrow="Pendanaan">
-                <div class="space-y-3.5">
-                    <div class="flex items-start gap-3">
-                        <Wallet class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div>
-                            <dt class="text-eyebrow">Kode Rekening</dt>
-                            <dd class="font-mono text-sm font-medium">
-                                {{ usulan.anggaran?.kode_rekening ?? '—' }}
-                            </dd>
-                            <dd class="text-sm text-muted-foreground">{{ usulan.anggaran?.nama_rekening }}</dd>
-                        </div>
-                    </div>
-                    <div class="ml-7 grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/40 p-3">
-                        <div>
-                            <div class="text-eyebrow">Total Pagu</div>
-                            <div class="mt-0.5 font-mono text-sm font-medium">
-                                {{ usulan.anggaran ? formatRupiah(usulan.anggaran.pagu) : '—' }}
-                            </div>
-                        </div>
-                        <div>
-                            <div class="text-eyebrow">Estimasi</div>
-                            <div class="mt-0.5 font-mono text-sm font-semibold text-primary">
-                                {{ formatRupiah(usulan.total_estimasi) }}
-                            </div>
+                        <div class="text-xs text-muted-foreground">
+                            {{ paketForm.item_ids.length }} dari {{ itemsBelumDipaket.length }} item dipilih
                         </div>
                     </div>
                 </div>
-            </Section>
-        </div>
 
-        <!-- Latar belakang & keterangan -->
-        <Section
-            v-if="usulan.latar_belakang || usulan.keterangan"
-            title="Latar Belakang & Keterangan"
-            eyebrow="Konteks"
-        >
-            <div v-if="usulan.latar_belakang" class="mb-4">
-                <div class="text-eyebrow mb-1">Latar Belakang</div>
-                <p class="whitespace-pre-line text-sm">{{ usulan.latar_belakang }}</p>
-            </div>
-            <div v-if="usulan.keterangan">
-                <div class="text-eyebrow mb-1">Keterangan</div>
-                <p class="whitespace-pre-line text-sm">{{ usulan.keterangan }}</p>
-            </div>
+                <!-- Catatan -->
+                <div>
+                    <label class="text-eyebrow mb-1 block">Catatan</label>
+                    <textarea
+                        v-model="paketForm.catatan"
+                        rows="2"
+                        class="input w-full"
+                        placeholder="Opsional"
+                    />
+                </div>
+
+                <p v-if="paketForm.errors.item_ids" class="text-sm text-destructive">
+                    {{ paketForm.errors.item_ids }}
+                </p>
+
+                <div class="flex gap-3">
+                    <PrimaryButton
+                        type="submit"
+                        :disabled="paketForm.processing"
+                        class="flex-1"
+                    >
+                        {{ paketForm.processing ? 'Memproses...' : 'Mulai Paket Pengadaan' }}
+                    </PrimaryButton>
+                    <button
+                        type="button"
+                        class="rounded-md border border-border px-4 py-2 text-sm transition hover:bg-muted"
+                        @click="showPaketForm = false; paketForm.reset(); selectAllItems = false"
+                    >
+                        Batal
+                    </button>
+                </div>
+            </form>
         </Section>
 
-        <!-- Rincian Items -->
-        <Section
-            title="Rincian Barang"
-            eyebrow="Detail"
-            :description="`${usulan.items.length} item diusulkan`"
-        >
-            <div class="-mx-6 -my-6 overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-border bg-secondary/40 text-left text-[10px] uppercase tracking-widest text-muted-foreground">
-                            <th class="px-6 py-3 font-semibold">#</th>
-                            <th class="px-6 py-3 font-semibold">Barang</th>
-                            <th class="px-6 py-3 font-semibold">Kategori</th>
-                            <th class="px-6 py-3 text-right font-semibold">Jumlah</th>
-                            <th class="px-6 py-3 text-right font-semibold">Harga Satuan</th>
-                            <th class="px-6 py-3 text-right font-semibold">Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border">
-                        <tr v-for="(item, idx) in usulan.items" :key="item.id">
-                            <td class="px-6 py-4 align-top text-muted-foreground">{{ idx + 1 }}</td>
-                            <td class="px-6 py-4 align-top">
-                                <div class="font-medium">{{ item.nama_barang }}</div>
-                                <div v-if="item.spesifikasi" class="mt-1 text-xs text-muted-foreground">
-                                    {{ item.spesifikasi }}
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 align-top text-muted-foreground">
-                                {{ item.kategori?.nama ?? '—' }}
-                            </td>
-                            <td class="whitespace-nowrap px-6 py-4 text-right align-top font-mono">
-                                {{ item.jumlah }} {{ item.satuan }}
-                            </td>
-                            <td class="whitespace-nowrap px-6 py-4 text-right align-top font-mono text-xs">
-                                {{ formatRupiah(item.harga_satuan_estimasi) }}
-                            </td>
-                            <td class="whitespace-nowrap px-6 py-4 text-right align-top font-mono text-xs font-semibold">
-                                {{ formatRupiah(item.subtotal) }}
-                            </td>
-                        </tr>
-                    </tbody>
-                    <tfoot>
-                        <tr class="border-t-2 border-primary/30 bg-primary/5">
-                            <td colspan="5" class="px-6 py-4 text-right">
-                                <div class="text-eyebrow">Total Estimasi</div>
-                            </td>
-                            <td class="whitespace-nowrap px-6 py-4 text-right font-mono">
-                                <span class="font-display text-lg font-bold text-primary">
-                                    {{ formatRupiah(usulan.total_estimasi) }}
-                                </span>
-                            </td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </Section>
-
-        <!-- Riwayat Approval -->
+        <!-- ── Riwayat Approval ───────────────────────────────────── -->
         <Section
             v-if="usulan.approvals.length > 0"
-            title="Riwayat Approval"
-            eyebrow="Audit Trail"
+            title="Riwayat Keputusan"
+            eyebrow="Approval"
         >
-            <ul class="space-y-4">
-                <li
-                    v-for="(approval, idx) in usulan.approvals"
+            <div class="-mx-6 -my-6 divide-y divide-border">
+                <div
+                    v-for="approval in usulan.approvals"
                     :key="approval.id"
-                    class="flex gap-3"
+                    class="flex items-start gap-4 px-6 py-4"
                 >
-                    <div class="relative flex flex-col items-center">
-                        <div class="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                        <div
-                            v-if="idx < usulan.approvals.length - 1"
-                            class="mt-1 w-px flex-1 bg-border"
-                        />
+                    <div
+                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                        :class="{
+                            'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300': approval.keputusan === 'disetujui',
+                            'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300': approval.keputusan === 'ditolak',
+                            'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300': approval.keputusan === 'revisi',
+                        }"
+                    >
+                        <CheckCircle2 v-if="approval.keputusan === 'disetujui'" class="h-4 w-4" />
+                        <XCircle v-else-if="approval.keputusan === 'ditolak'" class="h-4 w-4" />
+                        <RotateCcw v-else class="h-4 w-4" />
                     </div>
-                    <div class="flex-1 pb-4">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="text-sm font-semibold">
-                                {{ approval.approver?.name ?? 'Unknown' }}
-                            </span>
-                            <StatusBadge :status="approval.keputusan" />
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="font-medium">{{ approval.approver?.name ?? '—' }}</span>
+                            <StatusBadge :status="approval.keputusan" :label="approval.keputusan" />
                         </div>
-                        <div v-if="approval.approver?.jabatan" class="text-xs text-muted-foreground">
-                            {{ approval.approver.jabatan }}
-                        </div>
-                        <p
-                            v-if="approval.catatan"
-                            class="mt-2 rounded-md border border-border bg-secondary/40 p-3 text-sm"
-                        >
-                            {{ approval.catatan }}
-                        </p>
-                        <div class="mt-1 text-xs text-muted-foreground">
+                        <div class="text-xs text-muted-foreground">
+                            {{ approval.approver?.jabatan }} ·
                             {{ formatDateTime(approval.tanggal_keputusan) }}
                         </div>
+                        <p v-if="approval.catatan" class="mt-1 text-sm text-muted-foreground">
+                            {{ approval.catatan }}
+                        </p>
                     </div>
-                </li>
-            </ul>
+                </div>
+            </div>
         </Section>
 
-        <!-- Empty state riwayat -->
-        <EmptyState
-            v-else-if="usulan.status === 'diajukan'"
-            title="Menunggu Review"
-            description="Usulan sedang menunggu keputusan dari PPTK"
-            :icon="FileText"
-        />
+        <!-- ── Workflow Timeline ──────────────────────────────────── -->
+        <div class="rounded-lg border border-border bg-card px-6 py-5">
+            <div class="text-eyebrow mb-4">Progress Workflow</div>
+            <div class="flex items-start gap-0">
+                <template v-for="(step, idx) in workflowSteps" :key="step.num">
+                    <div class="flex flex-1 flex-col items-center text-center">
+                        <div
+                            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
+                            :class="{
+                                'bg-green-500 text-white': stepStatus(idx) === 'done',
+                                'bg-primary text-primary-foreground': stepStatus(idx) === 'active',
+                                'bg-muted text-muted-foreground': stepStatus(idx) === 'pending',
+                            }"
+                        >
+                            <CheckCircle2 v-if="stepStatus(idx) === 'done'" class="h-4 w-4" />
+                            <span v-else>{{ step.num }}</span>
+                        </div>
+                        <div class="mt-1.5 text-xs font-medium">{{ step.name }}</div>
+                        <div class="text-[10px] text-muted-foreground">{{ step.role }}</div>
+                    </div>
+                    <div
+                        v-if="idx < workflowSteps.length - 1"
+                        class="mt-4 h-px flex-1 transition-colors"
+                        :class="stepStatus(idx) === 'done' ? 'bg-green-400' : 'bg-border'"
+                    />
+                </template>
+            </div>
+        </div>
+
     </div>
 </template>

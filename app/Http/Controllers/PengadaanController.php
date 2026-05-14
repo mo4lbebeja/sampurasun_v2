@@ -19,6 +19,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 use App\Models\User;
 
+use App\Notifications\PengadaanKontrakNotification;
+use App\Notifications\UsulanDisetujuiNotification;
 
 class PengadaanController extends Controller
 {
@@ -37,7 +39,8 @@ class PengadaanController extends Controller
                 );
         };
  
-        // Usulan disetujui, siap mulai pengadaan — paginate 20
+        // Usulan siap: status 'disetujui' ATAU 'dalam_pengadaan' yang masih
+        // punya item belum dipaketkan
         $usulanSiap = UsulanPengadaan::query()
             ->with([
                 'pemohon:id,name,unit_kerja_id',
@@ -45,14 +48,50 @@ class PengadaanController extends Controller
                 'anggaran:id,sub_kegiatan_id,tahun,kode_rekening,nama_rekening',
                 'anggaran.subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
                 'anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
+                // Load items + assignment status
+                'items:id,usulan_id,nama_barang,satuan,jumlah,subtotal,kategori_id',
+                'items.kategori:id,nama',
+                // Load paket yang sudah ada
+                'pengadaan:id,usulan_id,no_pengadaan,nama_paket,status,metode,estimasi_paket',
             ])
-            ->where('status', 'disetujui')
+            ->where(function ($q) {
+                $q->where('status', 'disetujui')
+                  // Juga tampilkan yang dalam_pengadaan tapi masih ada item belum dipaketkan
+                  ->orWhere(function ($q2) {
+                      $q2->where('status', 'dalam_pengadaan')
+                         ->whereHas('items', function ($itemQ) {
+                             $itemQ->whereNotExists(function ($assignQ) {
+                                 $assignQ->from('pengadaan_item_assignments as pia')
+                                     ->whereColumn('pia.usulan_item_id', 'usulan_items.id')
+                                     ->join('pengadaan as p', 'p.id', '=', 'pia.pengadaan_id')
+                                     ->where('p.status', '!=', 'batal');
+                             });
+                         });
+                  });
+            })
             ->whereHas('anggaran', $anggaranFilter)
             ->latest('id')
             ->paginate(20, ['*'], 'siap_page')
             ->withQueryString();
  
-        // Pengadaan sedang berjalan (proses/kontrak) — paginate 20
+        // Tambahkan info item yang sudah di-assign per usulan
+        $usulanSiap->getCollection()->transform(function ($usulan) {
+            $assignedItemIds = \App\Models\PengadaanItemAssignment::query()
+                ->whereHas('pengadaan', fn ($q) =>
+                    $q->where('usulan_id', $usulan->id)->where('status', '!=', 'batal')
+                )
+                ->pluck('usulan_item_id')
+                ->toArray();
+ 
+            $usulan->items_assigned_ids = $assignedItemIds;
+            $usulan->items_total        = $usulan->items->count();
+            $usulan->items_assigned     = count($assignedItemIds);
+            $usulan->items_remaining    = $usulan->items_total - $usulan->items_assigned;
+ 
+            return $usulan;
+        });
+ 
+        // Pengadaan berjalan — tidak berubah
         $pengadaanBerjalan = Pengadaan::query()
             ->with([
                 'usulan:id,no_usulan,judul,total_estimasi,status,anggaran_id',
@@ -81,21 +120,56 @@ class PengadaanController extends Controller
         UsulanPengadaan $usulan,
         DocumentNumberService $numberService
     ): RedirectResponse {
-        if ($usulan->status !== 'disetujui') {
-            return back()->with('error', 'Usulan ini tidak dalam status disetujui.');
+        // Status harus 'disetujui' ATAU 'dalam_pengadaan' (untuk paket tambahan)
+        if (! in_array($usulan->status, ['disetujui', 'dalam_pengadaan'])) {
+            return back()->with('error', 'Usulan ini tidak bisa dibuatkan paket pengadaan baru.');
         }
  
-        $existing = $usulan->pengadaan;
+        $itemIds = array_unique(
+            array_filter(
+                (array) $request->validated('item_ids', []),
+                fn ($id) => is_numeric($id) && $id > 0
+            )
+        );
  
-        if ($existing && $existing->status !== 'batal') {
-            return back()->with('error', 'Usulan ini sudah ada record pengadaan aktif.');
-        }
+        $pakaiItemAssignment = ! empty($itemIds);
  
-        $pengadaan = DB::transaction(function () use ($request, $usulan, $existing, $numberService) {
-            if ($existing) {
-                $existing->delete();
+        if ($pakaiItemAssignment) {
+            // Pastikan semua item milik usulan ini
+            $validItemIds = $usulan->items()->pluck('id')->toArray();
+            $invalid = array_diff($itemIds, $validItemIds);
+ 
+            if (! empty($invalid)) {
+                return back()->withErrors([
+                    'item_ids' => 'Beberapa item bukan milik usulan ini.',
+                ]);
             }
  
+            // SEBELUM: whereHas yang bisa lolos karena terlalu spesifik
+            // SESUDAH: cek global langsung ke tabel pia — lebih sederhana & tidak bisa lolos
+            $sudahDipakai = \App\Models\PengadaanItemAssignment::query()
+                ->whereIn('usulan_item_id', $itemIds)
+                ->whereHas('pengadaan', fn ($q) =>
+                    $q->where('status', '!=', 'batal')
+                )
+                ->pluck('usulan_item_id')
+                ->toArray();
+ 
+            if (! empty($sudahDipakai)) {
+                $namaItem = $usulan->items()
+                    ->whereIn('id', $sudahDipakai)
+                    ->pluck('nama_barang')
+                    ->implode(', ');
+ 
+                return back()->withErrors([
+                    'item_ids' => "Item berikut sudah ada di paket lain: {$namaItem}",
+                ]);
+            }
+        }
+ 
+        $pengadaan = DB::transaction(function () use (
+            $request, $usulan, $numberService, $itemIds, $pakaiItemAssignment
+        ) {
             $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
  
             $noPengadaan = $numberService->generateInsideTransaction(
@@ -104,32 +178,55 @@ class PengadaanController extends Controller
                 tahunAnggaran: $tahunAnggaran,
             );
  
+            // Hitung estimasi paket dari item terpilih
+            $estimasiPaket = $pakaiItemAssignment
+                ? $usulan->items()->whereIn('id', $itemIds)->sum('subtotal')
+                : (float) $usulan->total_estimasi;
+ 
             $pengadaan = Pengadaan::create([
-                'usulan_id'    => $usulan->id,
-                'pejabat_id'   => $request->user()->id,
-                'no_pengadaan' => $noPengadaan,
-                'metode'       => $request->validated('metode'),
-                'tanggal_mulai' => $request->validated('tanggal_mulai'),
-                'catatan'      => $request->validated('catatan'),
-                'status'       => 'proses',
+                'usulan_id'      => $usulan->id,
+                'pejabat_id'     => $request->user()->id,
+                'no_pengadaan'   => $noPengadaan,
+                'nama_paket'     => $request->validated('nama_paket'),
+                'estimasi_paket' => $estimasiPaket,
+                'metode'         => $request->validated('metode'),
+                'tanggal_mulai'  => $request->validated('tanggal_mulai'),
+                'catatan'        => $request->validated('catatan'),
+                'status'         => 'proses',
             ]);
  
-            $usulan->update(['status' => 'dalam_pengadaan']);
+            // Simpan assignment item
+            if ($pakaiItemAssignment) {
+                $now = now();
+                $rows = array_map(fn ($id) => [
+                    'pengadaan_id'   => $pengadaan->id,
+                    'usulan_item_id' => $id,
+                    'created_at'     => $now,
+                    'updated_at'     => $now,
+                ], $itemIds);
  
+                // Insert sekaligus — lebih efisien dari loop create()
+                \App\Models\PengadaanItemAssignment::insert($rows);
+            }
+ 
+            // Status usulan dihandle oleh PengadaanObserver via refreshStatus()
             return $pengadaan;
         }, 5);
  
-        // ── ActivityLogger ───────────────────────────────────────────
         ActivityLogger::fromRequest(
             request:     $request,
             action:      'pengadaan.start',
-            description: "Pengadaan {$pengadaan->no_pengadaan} dimulai untuk usulan {$usulan->no_usulan}",
+            description: "Pengadaan {$pengadaan->no_pengadaan} dimulai untuk usulan {$usulan->no_usulan}" .
+                         ($pengadaan->nama_paket ? " (Paket: {$pengadaan->nama_paket})" : ''),
             usulanId:    $usulan->id,
             subjectType: 'Pengadaan',
             subjectId:   $pengadaan->id,
-            properties:  ['metode' => $pengadaan->metode],
+            properties:  [
+                'metode'      => $pengadaan->metode,
+                'nama_paket'  => $pengadaan->nama_paket,
+                'jumlah_item' => count($itemIds),
+            ],
         );
-        // ─────────────────────────────────────────────────────────────
  
         return redirect()
             ->route('pengadaan.show', $pengadaan)
@@ -139,80 +236,54 @@ class PengadaanController extends Controller
     /**
      * Detail pengadaan + form input kontrak.
      */
-public function show(Pengadaan $pengadaan): Response
-{
-    $pengadaan->load([
-        'usulan:id,no_usulan,judul,total_estimasi,status',
-        'usulan.pemohon:id,name,unit_kerja_id',
-        'usulan.pemohon.unitKerja:id,nama',
-        'usulan.items.kategori:id,nama',
-        'pejabat:id,name,nip,jabatan,alamat',
-        'pejabatPenandatangan:id,name,nip,jabatan,alamat',
-        'kpaPenandatangan:id,name,nip,jabatan,alamat',
-        'penyedia',
-    ]);
-
-    $penyediaOptions = Penyedia::query()
-        ->where('is_active', true)
-        ->orderBy('nama')
-        ->get([
-            'id',
-            'nama',
-            'jenis_badan',
-            'npwp',
-            'nama_pic',
-            'alamat',
-            'telepon',
-        ])
-        ->map(fn ($penyedia) => [
-            'id' => $penyedia->id,
-            'nama' => $penyedia->nama,
-            'jenis_badan' => $penyedia->jenis_badan,
-            'npwp' => $penyedia->npwp,
-            'nama_pic' => $penyedia->nama_pic,
-            'alamat' => $penyedia->alamat,
-            'telepon' => $penyedia->telepon,
-        ])
-        ->values();
-
+    public function show(Pengadaan $pengadaan): Response
+    {
+        $pengadaan->load([
+            'usulan:id,no_usulan,judul,total_estimasi,status,anggaran_id,pemohon_id',
+            'usulan.pemohon:id,name,unit_kerja_id,jabatan',
+            'usulan.pemohon.unitKerja:id,nama',
+            'usulan.anggaran:id,sub_kegiatan_id,tahun,kode_rekening,nama_rekening,pagu',
+            'usulan.anggaran.subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
+            'usulan.anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
+            // Semua item usulan (untuk menampilkan yang masuk paket ini)
+            'usulan.items.kategori:id,nama',
+            // Semua paket lain dari usulan yang sama (sibling)
+            'usulan.pengadaan:id,usulan_id,no_pengadaan,nama_paket,metode,status,estimasi_paket,nilai_kontrak',
+            // Item yang masuk paket INI
+            'usulanItems.kategori:id,nama',
+            'penyedia',
+            'pejabat:id,name,jabatan',
+            'pejabatPenandatangan:id,name,jabatan,nip',
+            'kpaPenandatangan:id,name,jabatan,nip',
+            'dokumenUpbj',
+            'dokumenPengadaan',
+            'pembayaran',
+            'evaluasi',
+        ]);
+ 
+        $penyediaOptions = Penyedia::query()
+            ->where('is_active', true)
+            ->select('id', 'nama', 'jenis_badan', 'npwp', 'nama_pic', 'alamat', 'telepon')
+            ->orderBy('nama')
+            ->get();
+ 
         $pejabatOptions = User::query()
+            ->select('id', 'name', 'nip', 'jabatan')
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'nip', 'jabatan'])
-            ->map(fn ($user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'nip' => $user->nip,
-                'jabatan' => $user->jabatan,
-                'alamat' => $user->alamat,
-            ])
-            ->values();
-
-        $kpaOptions = User::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'nip', 'jabatan', 'alamat'])
-            ->map(fn ($user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'nip' => $user->nip,
-                'jabatan' => $user->jabatan,
-                'alamat' => $user->alamat,
-            ])
-            ->values();
-
-    return Inertia::render('pengadaan/Show', [
-        'pengadaan' => $pengadaan,
-
-        // Untuk komponen baru
-        'penyediaOptions' => $penyediaOptions,
-
-        // Transisi: dipertahankan agar kode lama tidak rusak
-        'penyediaList' => $penyediaOptions,
-        'pejabatOptions' => $pejabatOptions,
-        'kpaOptions' => $kpaOptions,
-    ]);
-}
+            ->get();
+ 
+        // ID item yang masuk paket INI
+        $itemIdsInPaket = $pengadaan->usulanItems->pluck('id')->toArray();
+ 
+        return Inertia::render('pengadaan/Show', [
+            'pengadaan'       => $pengadaan,
+            'penyediaOptions' => $penyediaOptions,
+            'pejabatOptions'  => $pejabatOptions,
+            'kpaOptions'      => $pejabatOptions,
+            'itemIdsInPaket'  => $itemIdsInPaket,
+        ]);
+    }
 
     /**
      * Update kontrak — final step yang memindahkan ke UPBJ.
@@ -230,28 +301,28 @@ public function show(Pengadaan $pengadaan): Response
  
         if ($pengadaan->status === 'proses') {
             $validated = $request->validate([
-                'penyedia_id'             => ['required', 'exists:penyedia,id'],
+                'penyedia_id'              => ['required', 'exists:penyedia,id'],
                 'pejabat_penandatangan_id' => ['nullable', 'exists:users,id'],
-                'kpa_penandatangan_id'    => ['nullable', 'exists:users,id'],
-                'no_kontrak'              => ['required', 'string', 'max:255'],
-                'tanggal_kontrak'         => ['required', 'date'],
-                'tanggal_selesai'         => ['required', 'date', 'after_or_equal:tanggal_kontrak'],
-                'nilai_kontrak'           => ['required', 'numeric', 'min:0'],
-                'catatan'                 => ['nullable', 'string'],
-                'file_kontrak'            => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
-                'file_hps'                => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+                'kpa_penandatangan_id'     => ['nullable', 'exists:users,id'],
+                'no_kontrak'               => ['required', 'string', 'max:255'],
+                'tanggal_kontrak'          => ['required', 'date'],
+                'tanggal_selesai'          => ['required', 'date', 'after_or_equal:tanggal_kontrak'],
+                'nilai_kontrak'            => ['required', 'numeric', 'min:0'],
+                'catatan'                  => ['nullable', 'string'],
+                'file_kontrak'             => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
+                'file_hps'                 => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
             ]);
  
             $data = [
-                'penyedia_id'             => $validated['penyedia_id'],
+                'penyedia_id'              => $validated['penyedia_id'],
                 'pejabat_penandatangan_id' => $validated['pejabat_penandatangan_id'] ?? null,
-                'kpa_penandatangan_id'    => $validated['kpa_penandatangan_id'] ?? null,
-                'no_kontrak'              => $validated['no_kontrak'],
-                'tanggal_kontrak'         => $validated['tanggal_kontrak'],
-                'tanggal_selesai'         => $validated['tanggal_selesai'],
-                'nilai_kontrak'           => $validated['nilai_kontrak'],
-                'catatan'                 => $validated['catatan'] ?? null,
-                'status'                  => 'kontrak',
+                'kpa_penandatangan_id'     => $validated['kpa_penandatangan_id'] ?? null,
+                'no_kontrak'               => $validated['no_kontrak'],
+                'tanggal_kontrak'          => $validated['tanggal_kontrak'],
+                'tanggal_selesai'          => $validated['tanggal_selesai'],
+                'nilai_kontrak'            => $validated['nilai_kontrak'],
+                'catatan'                  => $validated['catatan'] ?? null,
+                'status'                   => 'kontrak',
             ];
         } else {
             $validated = $request->validate([
@@ -279,7 +350,7 @@ public function show(Pengadaan $pengadaan): Response
         $pengadaan->update($data);
  
         if ($pengadaan->wasChanged('status') && $pengadaan->status === 'kontrak') {
-            // ── ActivityLogger ───────────────────────────────────────
+ 
             ActivityLogger::fromRequest(
                 request:     $request,
                 action:      'pengadaan.kontrak',
@@ -294,16 +365,19 @@ public function show(Pengadaan $pengadaan): Response
                 ],
             );
  
-            // ── Notifikasi ke semua UPBJ ─────────────────────────────
             $upbj = \App\Models\User::query()
                 ->whereHas('role', fn ($q) => $q->where('name', 'upbj'))
                 ->where('is_active', true)
                 ->get();
  
-            Notification::send($upbj, new PengadaanKontrakNotification($pengadaan));
-            // ────────────────────────────────────────────────────────
+            \Illuminate\Support\Facades\Notification::send(
+                $upbj,
+                new PengadaanKontrakNotification($pengadaan)
+            );
  
-            $pengadaan->usulan?->update(['status' => 'dokumen']);
+            // ← DIHAPUS: $pengadaan->usulan?->update(['status' => 'dokumen'])
+            // UPBJ sekarang melihat paket dari pengadaan.status = 'kontrak'
+            // PengadaanObserver menangani refreshStatus() pada usulan secara otomatis
         }
  
         return redirect()
