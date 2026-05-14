@@ -81,7 +81,7 @@ class DashboardController extends Controller
             ->count();
 
         $dalamProses = (clone $usulanQuery)
-            ->whereIn('status', ['disetujui', 'dalam_pengadaan', 'dokumen', 'pembayaran'])
+            ->whereIn('status', ['disetujui', 'dalam_pengadaan'])
             ->count();
 
         $selesaiBulanIni = Pembayaran::query()

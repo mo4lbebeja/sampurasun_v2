@@ -15,8 +15,6 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Notifications\PengadaanKontrakNotification;
-use App\Notifications\UsulanDisetujuiNotification;
 
 class PembayaranController extends Controller
 {
@@ -183,7 +181,7 @@ class PembayaranController extends Controller
             ]);
             // PengadaanObserver::updated() otomatis panggil usulan->refreshStatus()
             $pengadaan->update(['status' => 'selesai']);
-            
+
             // ← DIHAPUS: $pengadaan->usulan->update(['status' => 'evaluasi'])
             // Perencanaan melihat paket dari pembayaran.status = 'lunas' + belum ada evaluasi
             // Tidak perlu update usulan.status

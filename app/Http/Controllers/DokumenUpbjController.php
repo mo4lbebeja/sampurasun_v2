@@ -11,15 +11,12 @@ use App\Services\ActivityLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Notifications\UsulanBaruNotification;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\NomorDokumenPengadaanService;
 use Barryvdh\DomPDF\Facade\Pdf;
-use App\Notifications\PengadaanKontrakNotification;
-use App\Notifications\UsulanDisetujuiNotification;
 
 class DokumenUpbjController extends Controller
 {
