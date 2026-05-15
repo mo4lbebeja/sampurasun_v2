@@ -16,17 +16,7 @@
             line-height: 1.35;
         }
 
-        .kop {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 14px;
-        }
-
-        .kop img {
-            width: 100%;
-            max-height: 95px;
-            object-fit: contain;
-        }
+        @include('dokumen.cetak.partials.kop-surat-style')
 
         .title {
             text-align: center;
@@ -107,6 +97,7 @@
 </head>
 
 <body>
+@include('dokumen.cetak._item_helpers')
 @php
     $usulan = $pengadaan->usulan;
     $anggaran = $usulan?->anggaran;
@@ -121,7 +112,6 @@
 
     $penyedia = $pengadaan->penyedia;
     $pejabat = $pengadaan->pejabatPenandatangan ?? $pengadaan->pejabat;
-    $items = $usulan?->items ?? collect();
 
     $tahun = $anggaran?->tahun
         ?? ($pengadaan->tanggal_kontrak ? \Carbon\Carbon::parse($pengadaan->tanggal_kontrak)->format('Y') : now()->year);
@@ -172,13 +162,7 @@
         : null;
 @endphp
 
-<div class="kop">
-    @if($kopBase64)
-        <img src="{{ $kopBase64 }}" alt="Kop Surat">
-    @else
-        <div>KOP SURAT</div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="title">
     RINGKASAN KONTRAK<br>

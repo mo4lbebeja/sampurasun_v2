@@ -19,28 +19,7 @@
             line-height: 1.35;
         }
 
-        .kop {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 18px;
-        }
-
-        .kop img {
-            width: 100%;
-            max-height: 95px;
-        }
-
-        .kop-fallback {
-            text-align: center;
-            font-size: 14px;
-            margin-bottom: 18px;
-        }
-
-        .kop-line {
-            border-top: 2px solid #111;
-            margin-top: 10px;
-            margin-bottom: 44px;
-        }
+        @include('dokumen.cetak.partials.kop-surat-style')
 
         .title {
             text-align: center;
@@ -265,6 +244,29 @@
             min-width: 170px;
             height: 12px;
         }
+
+        .kop-surat {
+            width: 100%;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .kop-surat img {
+            width: 100%;
+            max-height: 130px;
+            object-fit: contain;
+        }
+
+        .kop-placeholder {
+            width: 100%;
+            height: 90px;
+            border: 1px dashed #999;
+            text-align: center;
+            line-height: 90px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: #777;
+        }
     </style>
 </head>
 
@@ -386,21 +388,10 @@
     $alamatPenyedia = $penyedia?->alamat ?? '-';
     $namaPic = $penyedia?->nama_pic ?? '-';
 
-    $kopPath = public_path('storage/images/kop-surat.png');
-    $kopBase64 = file_exists($kopPath)
-        ? 'data:image/png;base64,' . base64_encode(file_get_contents($kopPath))
-        : null;
 @endphp
 
 {{-- HALAMAN 1 --}}
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div class="kop-fallback">KOP</div>
-        <div class="kop-line"></div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="title">
     SURAT PESANAN
@@ -472,46 +463,68 @@
     </thead>
 
     <tbody>
-        @forelse($items as $index => $item)
-            <tr>
-                <td class="cell-no">{{ $index + 1 }}</td>
-                <td class="cell-uraian">{{ $item->nama_barang ?? '-' }}</td>
-                <td class="cell-satuan">{{ $item->satuan ?? '-' }}</td>
-                <td class="cell-kuantitas">{{ $item->jumlah ?? '-' }}</td>
-                <td class="cell-harga">
-                    Rp. {{ number_format((float) ($item->harga_satuan_estimasi ?? 0), 0, ',', '.') }}
-                </td>
-                <td class="cell-jumlah">
-                    Rp. {{ number_format((float) ($item->subtotal ?? 0), 0, ',', '.') }}
-                </td>
-            </tr>
+        @php
+            // Tentukan sumber item dan harga
+            $itemList = $pengadaan->usulanItems->isNotEmpty()
+                ? $pengadaan->usulanItems
+                : ($pengadaan->usulan->items ?? collect());
+    
+            $pakaiHargaKontrak = $pengadaan->usulanItems->isNotEmpty();
+        @endphp
+    
+        @forelse($itemList as $item)
+        <tr>
+            <td>{{ $loop->iteration }}</td>
+            <td>
+                {{ $item->nama_barang ?? '-' }}
+                @if($item->spesifikasi)
+                    <br><small>{{ $item->spesifikasi }}</small>
+                @endif
+            </td>
+            <td class="cell-satuan">{{ $item->satuan ?? '-' }}</td>
+            <td class="cell-kuantitas">{{ $item->jumlah ?? '-' }}</td>
+            <td class="cell-harga">
+                @php
+                    $hargaSatuan = $pakaiHargaKontrak
+                        ? (float) ($item->pivot->harga_satuan_kontrak ?? 0)
+                        : (float) ($item->harga_satuan_estimasi ?? 0);
+                @endphp
+                Rp. {{ number_format($hargaSatuan, 0, ',', '.') }}
+            </td>
+            <td class="cell-jumlah">
+                @php
+                    $subtotalItem = $hargaSatuan * (int) ($item->jumlah ?? 0);
+                @endphp
+                Rp. {{ number_format($subtotalItem, 0, ',', '.') }}
+            </td>
+        </tr>
         @empty
-            <tr>
-                <td class="cell-no">&nbsp;</td>
-                <td class="cell-uraian">&nbsp;</td>
-                <td class="cell-satuan">&nbsp;</td>
-                <td class="cell-kuantitas">&nbsp;</td>
-                <td class="cell-harga">&nbsp;</td>
-                <td class="cell-jumlah">&nbsp;</td>
-            </tr>
+        <tr>
+            <td class="cell-no">&nbsp;</td>
+            <td class="cell-uraian">&nbsp;</td>
+            <td class="cell-satuan">&nbsp;</td>
+            <td class="cell-kuantitas">&nbsp;</td>
+            <td class="cell-harga">&nbsp;</td>
+            <td class="cell-jumlah">&nbsp;</td>
+        </tr>
         @endforelse
-
-        @for($i = $items->count(); $i < 2; $i++)
-            <tr>
-                <td class="text-center">&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-            </tr>
+    
+        {{-- Padding baris kosong agar tabel tidak terlalu pendek --}}
+        @for($i = $itemList->count(); $i < 2; $i++)
+        <tr>
+            <td class="text-center">&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+        </tr>
         @endfor
-
+    
         <tr>
             <td colspan="5" class="font-bold">JUMLAH TOTAL</td>
             <td class="text-right font-bold">{{ $nilaiKontrakText }}</td>
         </tr>
-
         <tr>
             <td colspan="6" class="text-center font-bold">
                 TERBILANG : {{ $nilaiKontrakTerbilang }}
@@ -569,11 +582,7 @@
 </table>
 
 {{-- HALAMAN 2 / COVER --}}
-<div class="page-break"></div>
-
-<div class="cover-logo">
-    Logo
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="cover-header">
     <div>PEMERINTAH DAERAH PROVINSI</div>

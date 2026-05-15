@@ -18,17 +18,8 @@
             color: #111;
             line-height: 1.45;
         }
-
-        .kop {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 18px;
-        }
-
-        .kop img {
-            width: 100%;
-            max-height: 95px;
-        }
+        
+        @include('dokumen.cetak.partials.kop-surat-style')
 
         .title {
             text-align: center;
@@ -155,13 +146,13 @@
     </style>
 </head>
 <body>
+@include('dokumen.cetak._item_helpers')
 @php
     $usulan = $pengadaan->usulan;
     $anggaran = $usulan?->anggaran;
     $subKegiatan = $anggaran?->subKegiatan;
     $penyedia = $pengadaan->penyedia;
     $pejabat = $pengadaan->pejabatPenandatangan ?? $pengadaan->pejabat;
-    $items = $usulan?->items ?? collect();
 
     $tahun = $anggaran?->tahun
         ?? ($pengadaan->tanggal_kontrak ? \Carbon\Carbon::parse($pengadaan->tanggal_kontrak)->format('Y') : now()->year);
@@ -305,13 +296,7 @@
 @endphp
 
 {{-- HALAMAN 1 --}}
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div>KOP</div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="title">
     Berita Acara Serah Terima<br>
@@ -430,13 +415,8 @@
 {{-- HALAMAN 2 --}}
 <div class="page-break"></div>
 
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div>KOP</div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
+
 
 <div class="lampiran-title">
     Lampiran Berita Acara Serah Terima Hasil Pekerjaan<br>

@@ -19,16 +19,7 @@
             line-height: 1.45;
         }
 
-        .kop {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 18px;
-        }
-
-        .kop img {
-            width: 100%;
-            max-height: 95px;
-        }
+         @include('dokumen.cetak.partials.kop-surat-style')
 
         .title {
             text-align: center;
@@ -293,13 +284,8 @@
     }
 @endphp
 
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div>KOP</div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
+
 
 <div class="title">
     Berita Acara Persetujuan Pembayaran

@@ -250,7 +250,7 @@ class PengadaanController extends Controller
             // Semua paket lain dari usulan yang sama (sibling)
             'usulan.pengadaan:id,usulan_id,no_pengadaan,nama_paket,metode,status,estimasi_paket,nilai_kontrak',
             // Item yang masuk paket INI
-            'usulanItems.kategori:id,nama',
+            'usulanItems' => fn ($q) => $q->with('kategori:id,nama'),
             'penyedia',
             'pejabat:id,name,jabatan',
             'pejabatPenandatangan:id,name,jabatan,nip',
@@ -307,10 +307,17 @@ class PengadaanController extends Controller
                 'no_kontrak'               => ['required', 'string', 'max:255'],
                 'tanggal_kontrak'          => ['required', 'date'],
                 'tanggal_selesai'          => ['required', 'date', 'after_or_equal:tanggal_kontrak'],
-                'nilai_kontrak'            => ['required', 'numeric', 'min:0'],
                 'catatan'                  => ['nullable', 'string'],
                 'file_kontrak'             => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
                 'file_hps'                 => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+ 
+                // Harga per item — opsional, hanya jika paket pakai item assignment
+                'item_kontrak'                          => ['nullable', 'array'],
+                'item_kontrak.*.usulan_item_id'         => ['required', 'integer', 'exists:usulan_items,id'],
+                'item_kontrak.*.harga_satuan_kontrak'   => ['required', 'numeric', 'min:0'],
+ 
+                // Hanya dipakai jika tidak ada item_kontrak (paket tanpa item assignment)
+                'nilai_kontrak'            => ['required_without:item_kontrak', 'nullable', 'numeric', 'min:0'],
             ]);
  
             $data = [
@@ -320,17 +327,59 @@ class PengadaanController extends Controller
                 'no_kontrak'               => $validated['no_kontrak'],
                 'tanggal_kontrak'          => $validated['tanggal_kontrak'],
                 'tanggal_selesai'          => $validated['tanggal_selesai'],
-                'nilai_kontrak'            => $validated['nilai_kontrak'],
                 'catatan'                  => $validated['catatan'] ?? null,
                 'status'                   => 'kontrak',
             ];
+ 
+            // ── Hitung nilai_kontrak ──────────────────────────────────
+            if (! empty($validated['item_kontrak'])) {
+                // Simpan harga per item ke pivot table
+                foreach ($validated['item_kontrak'] as $itemKontrak) {
+                    \App\Models\PengadaanItemAssignment::query()
+                        ->where('pengadaan_id', $pengadaan->id)
+                        ->where('usulan_item_id', $itemKontrak['usulan_item_id'])
+                        ->update([
+                            'harga_satuan_kontrak' => $itemKontrak['harga_satuan_kontrak'],
+                        ]);
+                }
+ 
+                // Auto-hitung nilai_kontrak dari SUM(jumlah × harga_satuan_kontrak)
+                $data['nilai_kontrak'] = \Illuminate\Support\Facades\DB::table('pengadaan_item_assignments as pia')
+                    ->join('usulan_items as ui', 'ui.id', '=', 'pia.usulan_item_id')
+                    ->where('pia.pengadaan_id', $pengadaan->id)
+                    ->sum(\Illuminate\Support\Facades\DB::raw('ui.jumlah * pia.harga_satuan_kontrak'));
+            } else {
+                // Paket tanpa item assignment — pakai nilai_kontrak manual
+                $data['nilai_kontrak'] = $validated['nilai_kontrak'] ?? 0;
+            }
         } else {
+            // Status sudah kontrak — hanya bisa upload file atau update harga item
             $validated = $request->validate([
-                'file_kontrak' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
-                'file_hps'     => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+                'file_kontrak'                        => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:20480'],
+                'file_hps'                            => ['nullable', 'file', 'mimes:pdf,xls,xlsx', 'max:20480'],
+                'item_kontrak'                        => ['nullable', 'array'],
+                'item_kontrak.*.usulan_item_id'       => ['required', 'integer', 'exists:usulan_items,id'],
+                'item_kontrak.*.harga_satuan_kontrak' => ['required', 'numeric', 'min:0'],
             ]);
  
             $data = [];
+ 
+            // Update harga per item jika dikirim
+            if (! empty($validated['item_kontrak'])) {
+                foreach ($validated['item_kontrak'] as $itemKontrak) {
+                    \App\Models\PengadaanItemAssignment::query()
+                        ->where('pengadaan_id', $pengadaan->id)
+                        ->where('usulan_item_id', $itemKontrak['usulan_item_id'])
+                        ->update([
+                            'harga_satuan_kontrak' => $itemKontrak['harga_satuan_kontrak'],
+                        ]);
+                }
+ 
+                $data['nilai_kontrak'] = \Illuminate\Support\Facades\DB::table('pengadaan_item_assignments as pia')
+                    ->join('usulan_items as ui', 'ui.id', '=', 'pia.usulan_item_id')
+                    ->where('pia.pengadaan_id', $pengadaan->id)
+                    ->sum(\Illuminate\Support\Facades\DB::raw('ui.jumlah * pia.harga_satuan_kontrak'));
+            }
         }
  
         if ($request->hasFile('file_kontrak')) {
@@ -344,13 +393,12 @@ class PengadaanController extends Controller
         }
  
         if (empty($data)) {
-            return back()->with('info', 'Tidak ada dokumen yang diupload.');
+            return back()->with('info', 'Tidak ada perubahan yang disimpan.');
         }
  
         $pengadaan->update($data);
  
         if ($pengadaan->wasChanged('status') && $pengadaan->status === 'kontrak') {
- 
             ActivityLogger::fromRequest(
                 request:     $request,
                 action:      'pengadaan.kontrak',
@@ -374,17 +422,13 @@ class PengadaanController extends Controller
                 $upbj,
                 new PengadaanKontrakNotification($pengadaan)
             );
- 
-            // ← DIHAPUS: $pengadaan->usulan?->update(['status' => 'dokumen'])
-            // UPBJ sekarang melihat paket dari pengadaan.status = 'kontrak'
-            // PengadaanObserver menangani refreshStatus() pada usulan secara otomatis
         }
  
         return redirect()
             ->route('pengadaan.show', $pengadaan)
             ->with('success', $pengadaan->status === 'kontrak'
                 ? 'Kontrak berhasil disimpan dan diteruskan ke UPBJ.'
-                : 'Dokumen kontrak berhasil diperbarui.');
+                : 'Kontrak berhasil diperbarui.');
     }
 
     /**

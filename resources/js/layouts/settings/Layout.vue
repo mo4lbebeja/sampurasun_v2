@@ -23,6 +23,10 @@ const sidebarNavItems: NavItem[] = [
         title: 'Appearance',
         href: editAppearance(),
     },
+    {
+        title: 'Kop Surat',
+        href: '/settings/kop-surat',
+    },
 ];
 
 const { isCurrentOrParentUrl } = useCurrentUrl();

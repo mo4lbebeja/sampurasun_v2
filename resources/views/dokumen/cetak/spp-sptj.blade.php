@@ -18,29 +18,8 @@
             color: #111;
             line-height: 1.35;
         }
-
-        .kop {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 18px;
-        }
-
-        .kop img {
-            width: 100%;
-            max-height: 95px;
-        }
-
-        .kop-fallback {
-            text-align: center;
-            font-size: 14px;
-            margin-bottom: 18px;
-        }
-
-        .kop-line {
-            border-top: 2px solid #111;
-            margin-top: 10px;
-            margin-bottom: 46px;
-        }
+        
+        @include('dokumen.cetak.partials.kop-surat-style')
 
         .title {
             text-align: center;
@@ -309,13 +288,13 @@
 </head>
 
 <body>
+@include('dokumen.cetak._item_helpers')
 @php
     $usulan = $pengadaan->usulan;
     $anggaran = $usulan?->anggaran;
     $subKegiatan = $anggaran?->subKegiatan;
     $unitKerja = $usulan?->pemohon?->unitKerja;
     $penyedia = $pengadaan->penyedia;
-    $items = $usulan?->items ?? collect();
 
     $kpa = $pengadaan->kpaPenandatangan
         ?? $pengadaan->pejabatPenandatangan
@@ -437,14 +416,7 @@
 @endphp
 
 {{-- HALAMAN 1 --}}
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div class="kop-fallback">KOP</div>
-        <div class="kop-line"></div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="title">
     SURAT PERNYATAAN PENGAJUAN SPP-GU
@@ -498,14 +470,7 @@
 {{-- HALAMAN 2 --}}
 <div class="page-break"></div>
 
-<div class="kop">
-    @if($kopBase64)
-        <img src="{!! $kopBase64 !!}" alt="Kop Surat">
-    @else
-        <div class="kop-fallback">KOP</div>
-        <div class="kop-line"></div>
-    @endif
-</div>
+@include('dokumen.cetak.partials.kop-surat')
 
 <div class="title">
     SURAT PERNYATAAN TANGGUNG JAWAB BELANJA (GU)

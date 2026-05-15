@@ -17,6 +17,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use App\Services\NomorDokumenPengadaanService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Models\AppSetting;
 
 class DokumenUpbjController extends Controller
 {
@@ -434,7 +435,7 @@ class DokumenUpbjController extends Controller
             'baprhp',
             'bapp',
         ], true), 404);
-
+ 
         $pengadaan->load([
             'usulan:id,no_usulan,judul,total_estimasi,status,pemohon_id,anggaran_id,tanggal_usulan,latar_belakang,keterangan',
             'usulan.pemohon:id,name,unit_kerja_id,nip,jabatan',
@@ -442,8 +443,11 @@ class DokumenUpbjController extends Controller
             'usulan.anggaran:id,sub_kegiatan_id,tahun,kode_rekening,nama_rekening,uraian,pagu',
             'usulan.anggaran.subKegiatan:id,dpa_anggaran_id,kode_sub_kegiatan,nama_kegiatan,tahun_anggaran',
             'usulan.anggaran.subKegiatan.dpaAnggaran:id,tahun_anggaran,no_dpa,tanggal_dpa,nama_dpa',
+            // Items dari usulan (fallback — harga estimasi)
             'usulan.items:id,usulan_id,kategori_id,nama_barang,spesifikasi,satuan,jumlah,harga_satuan_estimasi,subtotal',
             'usulan.items.kategori:id,nama',
+            // Items paket INI dengan harga kontrak aktual dari pivot
+            'usulanItems' => fn ($q) => $q->with('kategori:id,nama'),
             'penyedia:id,nama,jenis_badan,npwp,nama_pic,alamat,telepon,rekening_bank,nama_bank,atas_nama_rekening',
             'pejabat:id,name,nip,jabatan,alamat',
             'pejabatPenandatangan:id,name,nip,jabatan,alamat',
@@ -451,51 +455,72 @@ class DokumenUpbjController extends Controller
             'dokumenUpbj',
             'dokumenPengadaan',
         ]);
+ 
+        $kopSuratPath = AppSetting::getValue('kop_surat_image');
 
+        $kopSuratBase64 = null;
+
+        if ($kopSuratPath && Storage::disk('public')->exists($kopSuratPath)) {
+            $mime = Storage::disk('public')->mimeType($kopSuratPath);
+            $content = Storage::disk('public')->get($kopSuratPath);
+
+            $kopSuratBase64 = 'data:' . $mime . ';base64,' . base64_encode($content);
+        }
+
+        // ── Tentukan items dan harga yang dipakai di dokumen ──────────
+        //
+        // Jika paket punya item assignments dengan harga kontrak → pakai itu
+        // Jika tidak (paket tanpa item selection) → fallback ke semua item usulan dengan harga estimasi
+        $pakaiHargaKontrak = $pengadaan->usulanItems->isNotEmpty()
+            && $pengadaan->usulanItems->first()?->pivot?->harga_satuan_kontrak > 0;
+ 
+        $items = $pakaiHargaKontrak
+            ? $pengadaan->usulanItems   // harga_satuan_kontrak dari pivot
+            : ($pengadaan->usulan?->items ?? collect()); // fallback harga estimasi
+ 
+        // ── Shared data untuk semua view ──────────────────────────────
+        $sharedData = [
+            'pengadaan'         => $pengadaan,
+            'items'             => $items,
+            'pakaiHargaKontrak' => $pakaiHargaKontrak,
+        ];
+ 
         if ($jenis === 'ringkasan-kontrak') {
-            $pdf = Pdf::loadView('dokumen.cetak.ringkasan-kontrak', [
-                'pengadaan' => $pengadaan,
-            ])->setPaper('a4', 'portrait');
-
-            return $pdf->stream('Ringkasan-Kontrak-' . $pengadaan->id . '.pdf');
+            $pdf = Pdf::loadView('dokumen.cetak.ringkasan-kontrak', $sharedData)
+                ->setPaper('a4', 'portrait');
+            return $pdf->stream("Ringkasan-Kontrak-{$pengadaan->id}.pdf");
         }
+ 
         if ($jenis === 'spp-sptj') {
-            $pdf = Pdf::loadView('dokumen.cetak.spp-sptj', [
-                'pengadaan' => $pengadaan,
+            $pdf = Pdf::loadView('dokumen.cetak.spp-sptj', array_merge($sharedData, [
                 'dokumen' => null,
-                'jenis' => $jenis,
-            ])->setPaper('a4', 'portrait');
-            return $pdf->stream('SPP-SPTJ-' . $pengadaan->id . '.pdf');
-
+                'jenis'   => $jenis,
+                'kopSuratBase64' => $kopSuratBase64,
+            ]))->setPaper('a4', 'portrait');
+            return $pdf->stream("SPP-SPTJ-{$pengadaan->id}.pdf");
         }
+ 
         if ($jenis === 'surat-pesanan') {
-            $pdf = Pdf::loadView('dokumen.cetak.surat-pesanan', [
-                'pengadaan' => $pengadaan,
+            $pdf = Pdf::loadView('dokumen.cetak.surat-pesanan', array_merge($sharedData, [
                 'dokumen' => null,
-                'jenis' => $jenis,
-            ])->setPaper('a4', 'portrait');
-
-            return $pdf->stream('Surat-Pesanan-' . $pengadaan->id . '.pdf');
+                'jenis'   => $jenis,
+                'kopSuratBase64' => $kopSuratBase64,
+            ]))->setPaper('a4', 'portrait');
+            return $pdf->stream("Surat-Pesanan-{$pengadaan->id}.pdf");
         }
-        $dokumen = $pengadaan->dokumenPengadaan()
-            ->where('jenis', $jenis)
-            ->firstOrFail();
-
-        $view = match ($jenis) {
-            'bast' => 'dokumen.cetak.bast',
-            'bapmhp' => 'dokumen.cetak.bapmhp',
-            'baprhp' => 'dokumen.cetak.baprhp',
-            'bapp' => 'dokumen.cetak.bapp',
-            'spp-sptj' => 'dokumen.cetak.spp-sptj',
-            default => abort(404),
-        };
-
-        $pdf = Pdf::loadView($view, [
-            'pengadaan' => $pengadaan,
-            'dokumen' => $dokumen,
-            'jenis' => $jenis,
-        ])->setPaper('a4', 'portrait');
-        return $pdf->stream(str_replace('/', '-', $dokumen->nomor) . '.pdf');
+ 
+        // Untuk BAST, BAPMHP, BAPRHP, BAPP
+        if (in_array($jenis, ['bast', 'bapmhp', 'baprhp', 'bapp'])) {
+            $pdf = Pdf::loadView("dokumen.cetak.{$jenis}", array_merge($sharedData, [
+                'dokumen' => null,
+                'jenis'   => $jenis,
+                'kpa'     => $pengadaan->kpaPenandatangan,
+                'kopSuratBase64' => $kopSuratBase64,
+            ]))->setPaper('a4', 'portrait');
+            return $pdf->stream(strtoupper($jenis) . "-{$pengadaan->id}.pdf");
+        }
+ 
+        abort(404);
     }
 
     protected function petugasId(): int

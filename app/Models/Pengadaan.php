@@ -107,7 +107,9 @@ class Pengadaan extends Model
             'pengadaan_item_assignments',
             'pengadaan_id',
             'usulan_item_id'
-        )->withTimestamps();
+        )
+        ->withPivot('harga_satuan_kontrak')  // ← TAMBAHKAN
+        ->withTimestamps();
     }
 
     // ── Helper methods ───────────────────────────────────────────
