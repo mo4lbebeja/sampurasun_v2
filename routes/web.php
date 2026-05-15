@@ -119,12 +119,4 @@ Route::middleware(['auth', 'verified', 'tahun.anggaran'])->group(function () {
     Route::resource('users', UserController::class);
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/settings/kop-surat', [LetterheadSettingController::class, 'edit'])
-        ->name('settings.kop-surat.edit');
-
-    Route::post('/settings/kop-surat', [LetterheadSettingController::class, 'update'])
-        ->name('settings.kop-surat.update');
-});
-
 require __DIR__.'/settings.php';

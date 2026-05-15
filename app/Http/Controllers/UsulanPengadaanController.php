@@ -16,8 +16,7 @@ use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Http\Requests\UpdateUsulanRequest;
-
-use App\Notifications\UsulanDisetujuiNotification;
+//use App\Notifications\UsulanDisetujuiNotification;
 
 class UsulanPengadaanController extends Controller
 {
