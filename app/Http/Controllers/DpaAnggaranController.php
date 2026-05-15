@@ -12,6 +12,8 @@ class DpaAnggaranController extends Controller
 {
     public function index(Request $request): Response
     {
+        $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
+
         $query = DpaAnggaran::query()
             ->where('tahun_anggaran', $tahunAnggaran);
 

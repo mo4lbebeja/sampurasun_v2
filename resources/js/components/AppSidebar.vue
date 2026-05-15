@@ -124,6 +124,12 @@ const masterDataNavItems: RoleNavItem[] = [
         icon: Building2,
         roles: ['admin', 'pejabat_pengadaan'],
     },
+    {   
+        title: 'DPA Anggaran', 
+        href: '/dpa-anggaran', 
+        icon: Tag, 
+        roles: ['admin'], 
+    },
     {
         title: 'Sub Kegiatan',
         href: '/sub-kegiatan',
@@ -211,7 +217,7 @@ const visibleMasterDataItems = computed(() => filterByRole(masterDataNavItems));
         </SidebarContent>
 
         <SidebarFooter>
-            <NavFooter :items="footerNavItems" />
+            <NavFooter :items="[]" />
             <NavUser />
         </SidebarFooter>
     </Sidebar>

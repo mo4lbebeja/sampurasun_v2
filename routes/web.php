@@ -16,6 +16,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DpaAnggaranController;
 use App\Http\Controllers\SubKegiatanController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\NotificationController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -25,6 +26,11 @@ Route::middleware(['auth', 'verified', 'tahun.anggaran'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
+    // Di dalam grup middleware, urutan PENTING:
+    Route::post('/notifikasi/read-all', [NotificationController::class, 'markAllRead'])->name('notifikasi.read-all');
+    Route::get('/notifikasi',           [NotificationController::class, 'index'])->name('notifikasi.index');
+    Route::post('/notifikasi/{id}/read',[NotificationController::class, 'markRead'])->name('notifikasi.read');
+    
     // Custom routes untuk usulan HARUS sebelum Route::resource
     Route::post('/usulan/{usulan}/decide', [ApprovalController::class, 'decide'])
         ->name('usulan.decide');

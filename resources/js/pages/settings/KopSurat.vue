@@ -10,7 +10,7 @@ const form = useForm({
 });
 
 const submit = () => {
-    form.post(route('settings.kop-surat.update'), {
+    form.post('/settings/kop-surat', {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: () => {
