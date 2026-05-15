@@ -151,15 +151,6 @@ class EvaluasiController extends Controller
  
         DB::transaction(function () use ($pengadaan, $data) {
             Evaluasi::create($data);
- 
-            // ← SEBELUM: $pengadaan->usulan->update(['status' => 'selesai'])
-            //   (update usulan secara langsung — tidak cocok untuk multi-paket)
-            //
-            // ← SESUDAH: update status PAKET ini ke 'selesai'
-            //   PengadaanObserver::updated() akan terpicu
-            //   → memanggil usulan->refreshStatus()
-            //   → jika SEMUA paket selesai → usulan.status = 'selesai' otomatis
-            //   → jika masih ada paket lain aktif → usulan tetap 'dalam_pengadaan'
         });
  
         ActivityLogger::fromRequest(

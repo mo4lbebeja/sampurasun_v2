@@ -15,6 +15,7 @@ use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Http\Requests\UpdateUsulanRequest;
 
 use App\Notifications\UsulanDisetujuiNotification;
 
@@ -218,14 +219,129 @@ class UsulanPengadaanController extends Controller
         ]);
     }
 
-    public function edit(UsulanPengadaan $usulan): Response
+    public function edit(Request $request, UsulanPengadaan $usulan): Response|RedirectResponse
     {
-        abort(404, 'Belum diimplementasi');
+        // Hanya status draft yang boleh diedit
+        if ($usulan->status !== 'draft') {
+            return redirect()
+                ->route('usulan.show', $usulan)
+                ->with('error', 'Usulan ini tidak dapat diedit pada status saat ini.');
+        }
+ 
+        // Hanya pemohon asli atau admin
+        if (! $request->user()->isAdmin()
+            && $usulan->pemohon_id !== $request->user()->id) {
+            abort(403, 'Anda tidak memiliki akses untuk mengedit usulan ini.');
+        }
+ 
+        // Load relasi yang diperlukan — termasuk items.kategori agar form pre-filled
+        $usulan->load([
+            'items.kategori:id,nama,kode',
+            'anggaran:id,kode_rekening,nama_rekening,pagu,sisa,tahun',
+            'approvals' => fn ($q) => $q->where('keputusan', 'revisi')->latest()->limit(1),
+        ]);
+ 
+        $tahunAnggaran = (int) $request->session()->get('tahun_anggaran');
+ 
+        // Daftar anggaran aktif — PASTIKAN anggaran yang dipilih sebelumnya selalu masuk
+        $anggaranList = Anggaran::query()
+            ->where('is_active', true)
+            ->where(function ($q) use ($tahunAnggaran, $usulan) {
+                $q->where('tahun', $tahunAnggaran)
+                  ->orWhereHas('subKegiatan.dpaAnggaran', fn ($dpa) =>
+                      $dpa->where('tahun_anggaran', $tahunAnggaran)
+                  )
+                  // Selalu sertakan anggaran yang sebelumnya dipilih
+                  // agar dropdown tidak kosong saat dibuka
+                  ->orWhere('id', $usulan->anggaran_id);
+            })
+            ->select('id', 'kode_rekening', 'nama_rekening', 'pagu', 'sisa', 'tahun')
+            ->orderBy('kode_rekening')
+            ->get();
+ 
+        $kategoriList = KategoriBarang::query()
+            ->where('is_active', true)
+            ->select('id', 'kode', 'nama')
+            ->orderBy('kode')
+            ->get();
+ 
+        // Catatan revisi terakhir dari PPTK
+        $catatanRevisi = $usulan->approvals->first()?->catatan;
+ 
+        return Inertia::render('usulan/Edit', [
+            'usulan'        => $usulan,
+            'anggaranList'  => $anggaranList,
+            'kategoriList'  => $kategoriList,
+            'catatanRevisi' => $catatanRevisi,
+        ]);
     }
-
-    public function update(Request $request, UsulanPengadaan $usulan): RedirectResponse
+ 
+    /**
+     * Simpan perubahan dan ajukan ulang ke PPTK.
+     */
+    public function update(UpdateUsulanRequest $request, UsulanPengadaan $usulan): RedirectResponse
     {
-        abort(404, 'Belum diimplementasi');
+        if ($usulan->status !== 'draft') {
+            return back()->with('error', 'Usulan ini tidak dapat diubah pada status saat ini.');
+        }
+ 
+        if (! $request->user()->isAdmin()
+            && $usulan->pemohon_id !== $request->user()->id) {
+            abort(403);
+        }
+ 
+        DB::transaction(function () use ($request, $usulan) {
+            $totalEstimasi = collect($request->validated('items'))
+                ->sum(fn ($i) => $i['jumlah'] * $i['harga_satuan_estimasi']);
+ 
+            // Update data utama usulan
+            $usulan->update([
+                'judul'          => $request->validated('judul'),
+                'latar_belakang' => $request->validated('latar_belakang'),
+                'keterangan'     => $request->validated('keterangan'),
+                'anggaran_id'    => $request->validated('anggaran_id'),
+                'total_estimasi' => $totalEstimasi,
+                'status'         => 'diajukan',  // langsung ajukan ulang
+                'submitted_at'   => now(),
+            ]);
+ 
+            // Hapus items lama dan buat ulang dari data baru
+            $usulan->items()->delete();
+ 
+            foreach ($request->validated('items') as $item) {
+                $usulan->items()->create([
+                    'kategori_id'           => $item['kategori_id'],
+                    'nama_barang'           => $item['nama_barang'],
+                    'spesifikasi'           => $item['spesifikasi'] ?? null,
+                    'satuan'                => $item['satuan'],
+                    'jumlah'                => $item['jumlah'],
+                    'harga_satuan_estimasi' => $item['harga_satuan_estimasi'],
+                    'subtotal'              => $item['jumlah'] * $item['harga_satuan_estimasi'],
+                ]);
+            }
+        });
+ 
+        // Log aktivitas
+        ActivityLogger::fromRequest(
+            request:     $request,
+            action:      'usulan.submit',
+            description: "Usulan {$usulan->no_usulan} diperbaiki dan diajukan ulang: {$usulan->judul}",
+            usulanId:    $usulan->id,
+            subjectType: 'UsulanPengadaan',
+            subjectId:   $usulan->id,
+        );
+ 
+        // Notifikasi ke semua PPTK
+        $pptk = \App\Models\User::query()
+            ->whereHas('role', fn ($q) => $q->where('name', 'pptk'))
+            ->where('is_active', true)
+            ->get();
+ 
+        \Illuminate\Support\Facades\Notification::send($pptk, new UsulanBaruNotification($usulan));
+ 
+        return redirect()
+            ->route('usulan.show', $usulan)
+            ->with('success', "Usulan {$usulan->no_usulan} berhasil diperbaiki dan diajukan ulang ke PPTK.");
     }
 
     public function destroy(UsulanPengadaan $usulan): RedirectResponse

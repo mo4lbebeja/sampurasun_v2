@@ -279,6 +279,49 @@ const stepStatus = (idx: number): 'done' | 'active' | 'pending' => {
             </div>
         </div>
 
+        <!-- ── Banner Ditolak ─────────────────────────────────────── -->
+        <div
+            v-if="usulan.status === 'ditolak'"
+            class="flex items-start gap-4 rounded-lg border border-red-300 bg-red-50 p-5 dark:border-red-700 dark:bg-red-950"
+        >
+            <XCircle class="mt-0.5 h-6 w-6 shrink-0 text-red-600 dark:text-red-400" />
+            <div class="flex-1">
+                <p class="font-semibold text-red-800 dark:text-red-300">Usulan Ditolak</p>
+                <p class="mt-1 text-sm text-red-700 dark:text-red-400">
+                    Usulan ini telah ditolak secara permanen dan tidak dapat diubah.
+                    Lihat catatan penolakan di bagian Riwayat Keputusan di bawah.
+                </p>
+                <Link
+                    href="/usulan/create"
+                    class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-red-800 underline hover:text-red-900 dark:text-red-300"
+                >
+                    Buat usulan baru →
+                </Link>
+            </div>
+        </div>
+
+        <!-- ── Banner Draft (Perlu Direvisi) ─────────────────────── -->
+        <div
+            v-if="usulan.status === 'draft' && (userRole === 'sarana_umum' || isAdmin)"
+            class="flex items-start gap-4 rounded-lg border border-amber-300 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950"
+        >
+            <RotateCcw class="mt-0.5 h-6 w-6 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div class="flex-1">
+                <p class="font-semibold text-amber-800 dark:text-amber-300">Usulan Perlu Diperbaiki</p>
+                <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                    PPTK meminta revisi untuk usulan ini. Lihat catatan di bagian Riwayat Keputusan,
+                    lalu perbaiki dan ajukan ulang.
+                </p>
+            </div>
+            <Link
+                :href="`/usulan/${usulan.id}/edit`"
+                class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900 dark:text-amber-300 dark:hover:bg-amber-800"
+            >
+                <Pencil class="h-3.5 w-3.5" />
+                Perbaiki Usulan
+            </Link>
+        </div>
+        
         <!-- ── Panel Approval (PPTK) ─────────────────────────────── -->
         <Section
             v-if="canDecide"
