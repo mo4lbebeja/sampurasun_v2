@@ -26,12 +26,19 @@ CREATE TABLE `activity_logs` (
   KEY `activity_logs_action_index` (`action`),
   CONSTRAINT `activity_logs_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `activity_logs_usulan_id_foreign` FOREIGN KEY (`usulan_id`) REFERENCES `usulan_pengadaan` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of activity_logs
 -- ----------------------------
 BEGIN;
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (1, 1, 1, 'usulan.submit', 'UsulanPengadaan', 1, 'Usulan USL/2026/05/001 diajukan: Usulan Alat Kedokteran Umum', NULL, '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:42:02', '2026-05-15 11:42:02');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (2, 1, 1, 'approval.approve', 'UsulanPengadaan', 1, 'Usulan USL/2026/05/001 disetujui oleh Admin Sistem', '{\"catatan\":null}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:42:08', '2026-05-15 11:42:08');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (3, 1, 1, 'pengadaan.start', 'Pengadaan', 1, 'Pengadaan PGD/2026/05/001 dimulai untuk usulan USL/2026/05/001 (Paket: Pengadaan Incobator)', '{\"metode\":\"e_purchasing\",\"nama_paket\":\"Pengadaan Incobator\",\"jumlah_item\":1}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:42:40', '2026-05-15 11:42:40');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (4, 1, 1, 'pengadaan.kontrak', 'Pengadaan', 1, 'Kontrak Peng/01/2026 disimpan untuk pengadaan PGD/2026/05/001', '{\"no_kontrak\":\"Peng\\/01\\/2026\",\"nilai_kontrak\":\"86000000.00\",\"penyedia_id\":\"1\"}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:43:15', '2026-05-15 11:43:15');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (5, 1, 1, 'pengadaan.start', 'Pengadaan', 2, 'Pengadaan PGD/2026/05/002 dimulai untuk usulan USL/2026/05/001 (Paket: Pengadaan Infus Syring)', '{\"metode\":\"pengadaan_langsung\",\"nama_paket\":\"Pengadaan Infus Syring\",\"jumlah_item\":2}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:44:28', '2026-05-15 11:44:28');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (6, 1, 1, 'pengadaan.kontrak', 'Pengadaan', 2, 'Kontrak dsd/02/2026 disimpan untuk pengadaan PGD/2026/05/002', '{\"no_kontrak\":\"dsd\\/02\\/2026\",\"nilai_kontrak\":\"180000000.00\",\"penyedia_id\":\"1\"}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:44:52', '2026-05-15 11:44:52');
+INSERT INTO `activity_logs` (`id`, `user_id`, `usulan_id`, `action`, `subject_type`, `subject_id`, `description`, `properties`, `ip_address`, `user_agent`, `created_at`, `updated_at`) VALUES (7, 1, 1, 'dokumen.complete', 'Pengadaan', 1, 'Dokumen UPBJ pengadaan PGD/2026/05/001 lengkap, siap pembayaran', '{\"no_bast\":\"027\\/1\\/BAST\\/V\\/2026\"}', '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', '2026-05-15 11:46:16', '2026-05-15 11:46:16');
 COMMIT;
 
 -- ----------------------------
@@ -55,14 +62,36 @@ CREATE TABLE `anggaran` (
   UNIQUE KEY `anggaran_tahun_kode_rekening_unique` (`tahun`,`kode_rekening`),
   KEY `anggaran_sub_kegiatan_id_foreign` (`sub_kegiatan_id`),
   CONSTRAINT `anggaran_sub_kegiatan_id_foreign` FOREIGN KEY (`sub_kegiatan_id`) REFERENCES `sub_kegiatan` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of anggaran
 -- ----------------------------
 BEGIN;
-INSERT INTO `anggaran` (`id`, `sub_kegiatan_id`, `tahun`, `kode_rekening`, `nama_rekening`, `uraian`, `pagu`, `terpakai`, `is_active`, `created_at`, `updated_at`) VALUES (1, 1, 2026, '5.1.02.01.01.024', 'Belanja Modal Peralatan dan Mesin', 'Belanja kebutuhan peralatan dan mesin kantor', 400000000.00, 0.00, 1, '2026-05-13 16:32:32', '2026-05-13 16:52:39');
+INSERT INTO `anggaran` (`id`, `sub_kegiatan_id`, `tahun`, `kode_rekening`, `nama_rekening`, `uraian`, `pagu`, `terpakai`, `is_active`, `created_at`, `updated_at`) VALUES (1, 1, 2026, '5.1.02.01.01.024', 'Belanja Modal Peralatan dan Mesin', 'Belanja kebutuhan peralatan dan mesin kantor', 400000000.00, 0.00, 1, '2026-05-13 16:32:32', '2026-05-15 11:40:21');
 INSERT INTO `anggaran` (`id`, `sub_kegiatan_id`, `tahun`, `kode_rekening`, `nama_rekening`, `uraian`, `pagu`, `terpakai`, `is_active`, `created_at`, `updated_at`) VALUES (2, 2, 2027, '5.1.02.01.01.024', 'Belanja Modal Peralatan dan Mesin', 'Belanja kebutuhan peralatan dan mesin kantor', 500000000.00, 0.00, 1, '2026-05-13 16:32:32', '2026-05-13 16:32:32');
+INSERT INTO `anggaran` (`id`, `sub_kegiatan_id`, `tahun`, `kode_rekening`, `nama_rekening`, `uraian`, `pagu`, `terpakai`, `is_active`, `created_at`, `updated_at`) VALUES (3, 3, 2026, '02.03.4', 'Alat Kedokteran Umum', 'Alat Kesehatan', 2000000000.00, 266000000.00, 1, '2026-05-14 18:12:05', '2026-05-15 11:44:52');
+INSERT INTO `anggaran` (`id`, `sub_kegiatan_id`, `tahun`, `kode_rekening`, `nama_rekening`, `uraian`, `pagu`, `terpakai`, `is_active`, `created_at`, `updated_at`) VALUES (4, 3, 2026, '93.904.33', 'Alat Kedokteran Anak', 'Alkes Anak', 4000000000.00, 0.00, 1, '2026-05-14 18:12:30', '2026-05-14 18:12:30');
+COMMIT;
+
+-- ----------------------------
+-- Table structure for app_settings
+-- ----------------------------
+DROP TABLE IF EXISTS `app_settings`;
+CREATE TABLE `app_settings` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `key` varchar(255) NOT NULL,
+  `value` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `app_settings_key_unique` (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Records of app_settings
+-- ----------------------------
+BEGIN;
 COMMIT;
 
 -- ----------------------------
@@ -83,12 +112,13 @@ CREATE TABLE `approvals` (
   KEY `approvals_usulan_id_tanggal_keputusan_index` (`usulan_id`,`tanggal_keputusan`),
   CONSTRAINT `approvals_approver_id_foreign` FOREIGN KEY (`approver_id`) REFERENCES `users` (`id`),
   CONSTRAINT `approvals_usulan_id_foreign` FOREIGN KEY (`usulan_id`) REFERENCES `usulan_pengadaan` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of approvals
 -- ----------------------------
 BEGIN;
+INSERT INTO `approvals` (`id`, `usulan_id`, `approver_id`, `keputusan`, `catatan`, `tanggal_keputusan`, `created_at`, `updated_at`) VALUES (1, 1, 1, 'disetujui', NULL, '2026-05-15 11:42:08', '2026-05-15 11:42:08', '2026-05-15 11:42:08');
 COMMIT;
 
 -- ----------------------------
@@ -107,8 +137,6 @@ CREATE TABLE `cache` (
 -- Records of cache
 -- ----------------------------
 BEGIN;
-INSERT INTO `cache` (`key`, `value`, `expiration`) VALUES ('sampurasun-cache-bbea1129a9707f339cf3d5f4977b7dd6', 'i:1;', 1778690427);
-INSERT INTO `cache` (`key`, `value`, `expiration`) VALUES ('sampurasun-cache-bbea1129a9707f339cf3d5f4977b7dd6:timer', 'i:1778690427;', 1778690427);
 COMMIT;
 
 -- ----------------------------
@@ -143,12 +171,14 @@ CREATE TABLE `document_sequences` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `document_sequences_type_year_month_unique` (`type`,`year`,`month`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of document_sequences
 -- ----------------------------
 BEGIN;
+INSERT INTO `document_sequences` (`id`, `type`, `year`, `month`, `last_number`, `created_at`, `updated_at`) VALUES (1, 'usulan', 2026, 5, 1, '2026-05-15 11:42:02', '2026-05-15 11:42:02');
+INSERT INTO `document_sequences` (`id`, `type`, `year`, `month`, `last_number`, `created_at`, `updated_at`) VALUES (2, 'pengadaan', 2026, 5, 2, '2026-05-15 11:42:40', '2026-05-15 11:44:28');
 COMMIT;
 
 -- ----------------------------
@@ -178,12 +208,16 @@ CREATE TABLE `dokumen_pengadaan` (
   KEY `dokumen_pengadaan_created_by_foreign` (`created_by`),
   CONSTRAINT `dokumen_pengadaan_created_by_foreign` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `dokumen_pengadaan_pengadaan_id_foreign` FOREIGN KEY (`pengadaan_id`) REFERENCES `pengadaan` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of dokumen_pengadaan
 -- ----------------------------
 BEGIN;
+INSERT INTO `dokumen_pengadaan` (`id`, `pengadaan_id`, `jenis`, `nama_dokumen`, `nomor`, `kode_surat`, `nomor_urut`, `kode_dokumen`, `bulan_romawi`, `tahun`, `tanggal`, `keterangan`, `created_by`, `created_at`, `updated_at`) VALUES (1, 1, 'bast', 'Berita Acara Serah Terima', '027/1/BAST/V/2026', '027', 1, 'BAST', 'V', 2026, '2026-05-15', NULL, 1, '2026-05-15 11:45:48', '2026-05-15 11:45:48');
+INSERT INTO `dokumen_pengadaan` (`id`, `pengadaan_id`, `jenis`, `nama_dokumen`, `nomor`, `kode_surat`, `nomor_urut`, `kode_dokumen`, `bulan_romawi`, `tahun`, `tanggal`, `keterangan`, `created_by`, `created_at`, `updated_at`) VALUES (2, 1, 'bapmhp', 'Berita Acara Pemeriksaan Mutu Hasil Pekerjaan', '027/2/BAPMHP/V/2026', '027', 2, 'BAPMHP', 'V', 2026, '2026-05-15', NULL, 1, '2026-05-15 11:45:48', '2026-05-15 11:45:48');
+INSERT INTO `dokumen_pengadaan` (`id`, `pengadaan_id`, `jenis`, `nama_dokumen`, `nomor`, `kode_surat`, `nomor_urut`, `kode_dokumen`, `bulan_romawi`, `tahun`, `tanggal`, `keterangan`, `created_by`, `created_at`, `updated_at`) VALUES (3, 1, 'baprhp', 'Berita Acara Penerimaan Hasil Pekerjaan', '027/3/BAPRHP/V/2026', '027', 3, 'BAPRHP', 'V', 2026, '2026-05-15', NULL, 1, '2026-05-15 11:45:48', '2026-05-15 11:45:48');
+INSERT INTO `dokumen_pengadaan` (`id`, `pengadaan_id`, `jenis`, `nama_dokumen`, `nomor`, `kode_surat`, `nomor_urut`, `kode_dokumen`, `bulan_romawi`, `tahun`, `tanggal`, `keterangan`, `created_by`, `created_at`, `updated_at`) VALUES (4, 1, 'bapp', 'Berita Acara Persetujuan Pembayaran', '027/4/BAPP/V/2026', '027', 4, 'BAPP', 'V', 2026, '2026-05-15', NULL, 1, '2026-05-15 11:45:48', '2026-05-15 11:45:48');
 COMMIT;
 
 -- ----------------------------
@@ -212,12 +246,14 @@ CREATE TABLE `dokumen_upbj` (
   KEY `dokumen_upbj_petugas_id_foreign` (`petugas_id`),
   CONSTRAINT `dokumen_upbj_pengadaan_id_foreign` FOREIGN KEY (`pengadaan_id`) REFERENCES `pengadaan` (`id`) ON DELETE CASCADE,
   CONSTRAINT `dokumen_upbj_petugas_id_foreign` FOREIGN KEY (`petugas_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of dokumen_upbj
 -- ----------------------------
 BEGIN;
+INSERT INTO `dokumen_upbj` (`id`, `pengadaan_id`, `petugas_id`, `no_bast`, `tanggal_bast`, `file_bast`, `file_invoice`, `file_faktur_pajak`, `file_kuitansi`, `file_spp`, `file_lainnya`, `is_complete`, `keterangan`, `completed_at`, `created_at`, `updated_at`) VALUES (1, 1, 1, '027/1/BAST/V/2026', '2026-05-30', 'dokumen-upbj/bast/oQmIqXtB9noOYODgCqwP1hXOfLsPKGmsIbuXJ5LT.pdf', 'dokumen-upbj/invoice/yi9uad7k6M3vzM2IKPD3mG2rnC7z22hyLOyiGb9k.pdf', 'dokumen-upbj/faktur_pajak/YDeLFpmxJdL7HtlmWnpOvR8bH6jN71HLp4Rc7Sfm.pdf', 'dokumen-upbj/kuitansi/dIyyTZ5OiaDEEER1BH7m6A9RHTsi4Hyl77NDeIVP.pdf', 'dokumen-upbj/spp/dOQVBLEPbECW1zofswOx3DPPj0eKy33utn6I2kXc.pdf', NULL, 1, 'scsdsd', '2026-05-15 11:46:16', '2026-05-15 11:45:16', '2026-05-15 11:46:16');
+INSERT INTO `dokumen_upbj` (`id`, `pengadaan_id`, `petugas_id`, `no_bast`, `tanggal_bast`, `file_bast`, `file_invoice`, `file_faktur_pajak`, `file_kuitansi`, `file_spp`, `file_lainnya`, `is_complete`, `keterangan`, `completed_at`, `created_at`, `updated_at`) VALUES (2, 2, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, '2026-05-15 13:03:54', '2026-05-15 13:03:54');
 COMMIT;
 
 -- ----------------------------
@@ -385,7 +421,7 @@ CREATE TABLE `migrations` (
   `migration` varchar(255) NOT NULL,
   `batch` int(11) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of migrations
@@ -417,6 +453,39 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (23, '2026_05_10_07
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (24, '2026_05_10_073027_add_dpa_anggaran_id_to_sub_kegiatan_table', 1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (25, '2026_05_11_172024_create_document_sequences_table', 1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (26, '2026_05_12_100649_add_two_factor_columns_to_users_table', 1);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (28, '2026_05_13_180433_create_notifications_table', 2);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (29, '2026_05_14_000001_modify_pengadaan_add_paket_columns', 2);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (30, '2026_05_14_000002_create_pengadaan_item_assignments_table', 2);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (31, '2026_05_15_000001_add_harga_kontrak_to_pengadaan_item_assignments', 3);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (32, '2026_05_15_130607_create_app_settings_table', 4);
+COMMIT;
+
+-- ----------------------------
+-- Table structure for notifications
+-- ----------------------------
+DROP TABLE IF EXISTS `notifications`;
+CREATE TABLE `notifications` (
+  `id` char(36) NOT NULL,
+  `type` varchar(255) NOT NULL,
+  `notifiable_type` varchar(255) NOT NULL,
+  `notifiable_id` bigint(20) unsigned NOT NULL,
+  `data` text NOT NULL,
+  `read_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `notifications_notifiable_type_notifiable_id_index` (`notifiable_type`,`notifiable_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Records of notifications
+-- ----------------------------
+BEGIN;
+INSERT INTO `notifications` (`id`, `type`, `notifiable_type`, `notifiable_id`, `data`, `read_at`, `created_at`, `updated_at`) VALUES ('3d3fee03-ad52-46c6-8fc8-aada1d4c7e00', 'App\\Notifications\\UsulanDisetujuiNotification', 'App\\Models\\User', 4, '{\"type\":\"approval.approve\",\"usulan_id\":1,\"no_usulan\":\"USL\\/2026\\/05\\/001\",\"judul\":\"Usulan Alat Kedokteran Umum\",\"url\":\"\\/usulan\\/1\",\"message\":\"Usulan USL\\/2026\\/05\\/001 disetujui, siap diproses pengadaan.\"}', NULL, '2026-05-15 11:42:08', '2026-05-15 11:42:08');
+INSERT INTO `notifications` (`id`, `type`, `notifiable_type`, `notifiable_id`, `data`, `read_at`, `created_at`, `updated_at`) VALUES ('5be0f06b-d89c-453b-8ccd-af7c73f77e5b', 'App\\Notifications\\PengadaanKontrakNotification', 'App\\Models\\User', 5, '{\"type\":\"pengadaan.kontrak\",\"pengadaan_id\":2,\"no_pengadaan\":\"PGD\\/2026\\/05\\/002\",\"judul\":\"Usulan Alat Kedokteran Umum\",\"url\":\"\\/dokumen\\/2\",\"message\":\"Kontrak PGD\\/2026\\/05\\/002 siap, mohon lengkapi dokumen UPBJ.\"}', NULL, '2026-05-15 11:44:52', '2026-05-15 11:44:52');
+INSERT INTO `notifications` (`id`, `type`, `notifiable_type`, `notifiable_id`, `data`, `read_at`, `created_at`, `updated_at`) VALUES ('6b17d3c5-9884-45fb-be4b-567cd11213ec', 'App\\Notifications\\PengadaanKontrakNotification', 'App\\Models\\User', 5, '{\"type\":\"pengadaan.kontrak\",\"pengadaan_id\":1,\"no_pengadaan\":\"PGD\\/2026\\/05\\/001\",\"judul\":\"Usulan Alat Kedokteran Umum\",\"url\":\"\\/dokumen\\/1\",\"message\":\"Kontrak PGD\\/2026\\/05\\/001 siap, mohon lengkapi dokumen UPBJ.\"}', NULL, '2026-05-15 11:43:15', '2026-05-15 11:43:15');
+INSERT INTO `notifications` (`id`, `type`, `notifiable_type`, `notifiable_id`, `data`, `read_at`, `created_at`, `updated_at`) VALUES ('b7ae5602-8fe5-440b-83ef-3c03917b9014', 'App\\Notifications\\DokumenLengkapNotification', 'App\\Models\\User', 6, '{\"type\":\"dokumen.complete\",\"pengadaan_id\":1,\"no_pengadaan\":\"PGD\\/2026\\/05\\/001\",\"judul\":\"Usulan Alat Kedokteran Umum\",\"url\":\"\\/pembayaran\\/1\",\"message\":\"Dokumen PGD\\/2026\\/05\\/001 lengkap, siap diproses pembayaran.\"}', NULL, '2026-05-15 11:46:16', '2026-05-15 11:46:16');
+INSERT INTO `notifications` (`id`, `type`, `notifiable_type`, `notifiable_id`, `data`, `read_at`, `created_at`, `updated_at`) VALUES ('d05d9754-2ebc-4999-bac3-e89036bce402', 'App\\Notifications\\UsulanBaruNotification', 'App\\Models\\User', 3, '{\"type\":\"usulan.submit\",\"usulan_id\":1,\"no_usulan\":\"USL\\/2026\\/05\\/001\",\"judul\":\"Usulan Alat Kedokteran Umum\",\"pemohon\":\"Admin Sistem\",\"url\":\"\\/usulan\\/1\",\"message\":\"Usulan baru masuk: USL\\/2026\\/05\\/001 \\u2014 Usulan Alat Kedokteran Umum\"}', NULL, '2026-05-15 11:42:02', '2026-05-15 11:42:02');
 COMMIT;
 
 -- ----------------------------
@@ -479,6 +548,8 @@ DROP TABLE IF EXISTS `pengadaan`;
 CREATE TABLE `pengadaan` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `usulan_id` bigint(20) unsigned NOT NULL,
+  `nama_paket` varchar(200) DEFAULT NULL COMMENT 'Nama paket jika satu usulan dipecah jadi beberapa paket',
+  `estimasi_paket` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Porsi estimasi dari total_estimasi usulan untuk paket ini',
   `pejabat_id` bigint(20) unsigned NOT NULL,
   `pejabat_penandatangan_id` bigint(20) unsigned DEFAULT NULL,
   `kpa_penandatangan_id` bigint(20) unsigned DEFAULT NULL,
@@ -497,24 +568,53 @@ CREATE TABLE `pengadaan` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `pengadaan_usulan_id_unique` (`usulan_id`),
   UNIQUE KEY `pengadaan_no_pengadaan_unique` (`no_pengadaan`),
   KEY `pengadaan_pejabat_id_foreign` (`pejabat_id`),
   KEY `pengadaan_penyedia_id_foreign` (`penyedia_id`),
   KEY `pengadaan_status_index` (`status`),
   KEY `pengadaan_pejabat_penandatangan_id_foreign` (`pejabat_penandatangan_id`),
   KEY `pengadaan_kpa_penandatangan_id_foreign` (`kpa_penandatangan_id`),
+  KEY `pengadaan_usulan_id_index` (`usulan_id`),
   CONSTRAINT `pengadaan_kpa_penandatangan_id_foreign` FOREIGN KEY (`kpa_penandatangan_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `pengadaan_pejabat_id_foreign` FOREIGN KEY (`pejabat_id`) REFERENCES `users` (`id`),
   CONSTRAINT `pengadaan_pejabat_penandatangan_id_foreign` FOREIGN KEY (`pejabat_penandatangan_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `pengadaan_penyedia_id_foreign` FOREIGN KEY (`penyedia_id`) REFERENCES `penyedia` (`id`) ON DELETE SET NULL,
   CONSTRAINT `pengadaan_usulan_id_foreign` FOREIGN KEY (`usulan_id`) REFERENCES `usulan_pengadaan` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of pengadaan
 -- ----------------------------
 BEGIN;
+INSERT INTO `pengadaan` (`id`, `usulan_id`, `nama_paket`, `estimasi_paket`, `pejabat_id`, `pejabat_penandatangan_id`, `kpa_penandatangan_id`, `penyedia_id`, `no_pengadaan`, `metode`, `tanggal_mulai`, `tanggal_selesai`, `no_kontrak`, `tanggal_kontrak`, `nilai_kontrak`, `file_kontrak`, `file_hps`, `status`, `catatan`, `created_at`, `updated_at`) VALUES (1, 1, 'Pengadaan Incobator', 90000000.00, 1, 4, 1, 1, 'PGD/2026/05/001', 'e_purchasing', '2026-05-15', '2026-05-29', 'Peng/01/2026', '2026-05-15', 86000000.00, NULL, NULL, 'kontrak', 'tidak ada', '2026-05-15 11:42:40', '2026-05-15 11:43:15');
+INSERT INTO `pengadaan` (`id`, `usulan_id`, `nama_paket`, `estimasi_paket`, `pejabat_id`, `pejabat_penandatangan_id`, `kpa_penandatangan_id`, `penyedia_id`, `no_pengadaan`, `metode`, `tanggal_mulai`, `tanggal_selesai`, `no_kontrak`, `tanggal_kontrak`, `nilai_kontrak`, `file_kontrak`, `file_hps`, `status`, `catatan`, `created_at`, `updated_at`) VALUES (2, 1, 'Pengadaan Infus Syring', 180000000.00, 1, 4, 4, 1, 'PGD/2026/05/002', 'pengadaan_langsung', '2026-05-15', '2026-05-29', 'dsd/02/2026', '2026-05-15', 180000000.00, NULL, NULL, 'kontrak', 'nothing', '2026-05-15 11:44:28', '2026-05-15 11:44:52');
+COMMIT;
+
+-- ----------------------------
+-- Table structure for pengadaan_item_assignments
+-- ----------------------------
+DROP TABLE IF EXISTS `pengadaan_item_assignments`;
+CREATE TABLE `pengadaan_item_assignments` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `pengadaan_id` bigint(20) unsigned NOT NULL,
+  `usulan_item_id` bigint(20) unsigned NOT NULL,
+  `harga_satuan_kontrak` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Harga satuan hasil negosiasi/kontrak aktual, berbeda dari estimasi',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `pia_usulan_item_unique` (`usulan_item_id`),
+  KEY `pia_pengadaan_id_index` (`pengadaan_id`),
+  CONSTRAINT `pengadaan_item_assignments_pengadaan_id_foreign` FOREIGN KEY (`pengadaan_id`) REFERENCES `pengadaan` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `pengadaan_item_assignments_usulan_item_id_foreign` FOREIGN KEY (`usulan_item_id`) REFERENCES `usulan_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Records of pengadaan_item_assignments
+-- ----------------------------
+BEGIN;
+INSERT INTO `pengadaan_item_assignments` (`id`, `pengadaan_id`, `usulan_item_id`, `harga_satuan_kontrak`, `created_at`, `updated_at`) VALUES (1, 1, 1, 43000000.00, '2026-05-15 11:42:40', '2026-05-15 11:43:15');
+INSERT INTO `pengadaan_item_assignments` (`id`, `pengadaan_id`, `usulan_item_id`, `harga_satuan_kontrak`, `created_at`, `updated_at`) VALUES (2, 2, 2, 25000000.00, '2026-05-15 11:44:28', '2026-05-15 11:44:52');
+INSERT INTO `pengadaan_item_assignments` (`id`, `pengadaan_id`, `usulan_item_id`, `harga_satuan_kontrak`, `created_at`, `updated_at`) VALUES (3, 2, 3, 20000000.00, '2026-05-15 11:44:28', '2026-05-15 11:44:52');
 COMMIT;
 
 -- ----------------------------
@@ -538,12 +638,13 @@ CREATE TABLE `penyedia` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `penyedia_nama_index` (`nama`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of penyedia
 -- ----------------------------
 BEGIN;
+INSERT INTO `penyedia` (`id`, `nama`, `jenis_badan`, `npwp`, `alamat`, `telepon`, `email`, `nama_pic`, `rekening_bank`, `nama_bank`, `atas_nama_rekening`, `is_active`, `created_at`, `updated_at`) VALUES (1, 'PT. Sijalucom Kreasi Mandiri', 'Perorangan', '123455', 'Pameungpeuk - Garut', '082119033033', 'ptsijalucomkreasimandiri@gmail.com', 'Nevia Yusup', '1234455667', 'BJB', 'PT Sijalucom Kreasi Mandiri', 1, '2026-05-13 17:47:59', '2026-05-13 17:47:59');
 COMMIT;
 
 -- ----------------------------
@@ -594,7 +695,7 @@ CREATE TABLE `sessions` (
 -- Records of sessions
 -- ----------------------------
 BEGIN;
-INSERT INTO `sessions` (`id`, `user_id`, `ip_address`, `user_agent`, `payload`, `last_activity`) VALUES ('QX2idN2mbpGBvaXv8t93N5IGlXksK9zSI7g5Ttse', 1, '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'eyJfdG9rZW4iOiJ6VlV2TVZOSDlJVVdCNnM4NHlZVXlDYUYybFV4akMxYUk3TWpRRm5LIiwiX2ZsYXNoIjp7Im9sZCI6W10sIm5ldyI6W119LCJfcHJldmlvdXMiOnsidXJsIjoiaHR0cDpcL1wvc2FtcHVyYXN1bi50ZXN0XC9hbmdnYXJhbiIsInJvdXRlIjoiYW5nZ2FyYW4uaW5kZXgifSwibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiOjEsInRhaHVuX2FuZ2dhcmFuIjoyMDI2fQ==', 1778691180);
+INSERT INTO `sessions` (`id`, `user_id`, `ip_address`, `user_agent`, `payload`, `last_activity`) VALUES ('TwlIoMqOrmKdb2exInc5c6CJRpeBw6lr7IvaTSHN', 1, '127.0.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'eyJfdG9rZW4iOiJCeGRIVGY5U0FlTE5KRUlVMjNidTlWdGNoT2tVdzc4R0kySkZIdkNvIiwiX2ZsYXNoIjp7Im9sZCI6W10sIm5ldyI6W119LCJsb2dpbl93ZWJfNTliYTM2YWRkYzJiMmY5NDAxNTgwZjAxNGM3ZjU4ZWE0ZTMwOTg5ZCI6MSwidGFodW5fYW5nZ2FyYW4iOjIwMjYsIl9wcmV2aW91cyI6eyJ1cmwiOiJodHRwOlwvXC9zYW1wdXJhc3VuLnRlc3RcL3NldHRpbmdzXC9rb3Atc3VyYXQiLCJyb3V0ZSI6InNldHRpbmdzLmtvcC1zdXJhdC5lZGl0In0sInVybCI6W10sImF1dGgiOnsicGFzc3dvcmRfY29uZmlybWVkX2F0IjoxNzc4ODY0NDEyfSwidHdvX2ZhY3Rvcl9lbXB0eV9hdCI6MTc3ODg2NDQxN30=', 1778866958);
 COMMIT;
 
 -- ----------------------------
@@ -614,7 +715,7 @@ CREATE TABLE `sub_kegiatan` (
   KEY `sub_kegiatan_tahun_anggaran_is_active_index` (`tahun_anggaran`,`is_active`),
   KEY `sub_kegiatan_dpa_anggaran_id_foreign` (`dpa_anggaran_id`),
   CONSTRAINT `sub_kegiatan_dpa_anggaran_id_foreign` FOREIGN KEY (`dpa_anggaran_id`) REFERENCES `dpa_anggaran` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of sub_kegiatan
@@ -622,6 +723,7 @@ CREATE TABLE `sub_kegiatan` (
 BEGIN;
 INSERT INTO `sub_kegiatan` (`id`, `dpa_anggaran_id`, `kode_sub_kegiatan`, `nama_kegiatan`, `tahun_anggaran`, `is_active`, `created_at`, `updated_at`) VALUES (1, 1, 'SUB-001', 'Pengadaan Sarana dan Prasarana Kantor', 2026, 1, '2026-05-13 16:32:32', '2026-05-13 16:32:32');
 INSERT INTO `sub_kegiatan` (`id`, `dpa_anggaran_id`, `kode_sub_kegiatan`, `nama_kegiatan`, `tahun_anggaran`, `is_active`, `created_at`, `updated_at`) VALUES (2, 2, 'SUB-001', 'Pengadaan Sarana dan Prasarana Kantor', 2027, 1, '2026-05-13 16:32:32', '2026-05-13 16:32:32');
+INSERT INTO `sub_kegiatan` (`id`, `dpa_anggaran_id`, `kode_sub_kegiatan`, `nama_kegiatan`, `tahun_anggaran`, `is_active`, `created_at`, `updated_at`) VALUES (3, 1, '1.02.03.28', 'Pengadaan Alkes', 2026, 1, '2026-05-14 18:11:33', '2026-05-14 18:11:33');
 COMMIT;
 
 -- ----------------------------
@@ -716,12 +818,15 @@ CREATE TABLE `usulan_items` (
   KEY `usulan_items_usulan_id_index` (`usulan_id`),
   CONSTRAINT `usulan_items_kategori_id_foreign` FOREIGN KEY (`kategori_id`) REFERENCES `kategori_barang` (`id`),
   CONSTRAINT `usulan_items_usulan_id_foreign` FOREIGN KEY (`usulan_id`) REFERENCES `usulan_pengadaan` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of usulan_items
 -- ----------------------------
 BEGIN;
+INSERT INTO `usulan_items` (`id`, `usulan_id`, `kategori_id`, `nama_barang`, `spesifikasi`, `jumlah`, `satuan`, `harga_satuan_estimasi`, `subtotal`, `keterangan`, `created_at`, `updated_at`) VALUES (1, 1, 5, 'Incubator', 'Incubator', 2, 'unit', 45000000.00, 90000000.00, NULL, '2026-05-15 11:42:02', '2026-05-15 11:42:02');
+INSERT INTO `usulan_items` (`id`, `usulan_id`, `kategori_id`, `nama_barang`, `spesifikasi`, `jumlah`, `satuan`, `harga_satuan_estimasi`, `subtotal`, `keterangan`, `created_at`, `updated_at`) VALUES (2, 1, 5, 'Infus Pump', 'Infus', 4, 'unit', 25000000.00, 100000000.00, NULL, '2026-05-15 11:42:02', '2026-05-15 11:42:02');
+INSERT INTO `usulan_items` (`id`, `usulan_id`, `kategori_id`, `nama_barang`, `spesifikasi`, `jumlah`, `satuan`, `harga_satuan_estimasi`, `subtotal`, `keterangan`, `created_at`, `updated_at`) VALUES (3, 1, 5, 'Syring pump', 'syring', 4, 'unit', 20000000.00, 80000000.00, NULL, '2026-05-15 11:42:02', '2026-05-15 11:42:02');
 COMMIT;
 
 -- ----------------------------
@@ -752,12 +857,13 @@ CREATE TABLE `usulan_pengadaan` (
   KEY `usulan_pengadaan_pemohon_id_index` (`pemohon_id`),
   CONSTRAINT `usulan_pengadaan_anggaran_id_foreign` FOREIGN KEY (`anggaran_id`) REFERENCES `anggaran` (`id`),
   CONSTRAINT `usulan_pengadaan_pemohon_id_foreign` FOREIGN KEY (`pemohon_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Records of usulan_pengadaan
 -- ----------------------------
 BEGIN;
+INSERT INTO `usulan_pengadaan` (`id`, `no_usulan`, `pemohon_id`, `anggaran_id`, `tanggal_usulan`, `judul`, `latar_belakang`, `keterangan`, `total_estimasi`, `status`, `catatan_pemohon`, `file_pendukung`, `submitted_at`, `created_at`, `updated_at`, `deleted_at`) VALUES (1, 'USL/2026/05/001', 1, 3, '2026-05-15', 'Usulan Alat Kedokteran Umum', 'Untuk NICU', 'NICU', 270000000.00, 'dalam_pengadaan', NULL, NULL, '2026-05-15 11:42:02', '2026-05-15 11:42:02', '2026-05-15 11:43:15', NULL);
 COMMIT;
 
 SET FOREIGN_KEY_CHECKS = 1;
