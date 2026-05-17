@@ -146,12 +146,12 @@ const formatMetode = (val: string) =>
     val.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 const workflowStages = computed(() => [
-    { num: 1, name: 'Usulan',    role: 'Sarana & Umum',       count: props.workflowCounts?.usulan    ?? 0 },
-    { num: 2, name: 'Approval',  role: 'PPTK',                count: props.workflowCounts?.approval  ?? 0 },
-    { num: 3, name: 'Pengadaan', role: 'Pejabat Pengadaan',   count: props.workflowCounts?.pengadaan ?? 0 },
-    { num: 4, name: 'Dokumen',   role: 'UPBJ',                count: props.workflowCounts?.dokumen   ?? 0 },
-    { num: 5, name: 'Pembayaran', role: 'Keuangan',           count: props.workflowCounts?.pembayaran ?? 0 },
-    { num: 6, name: 'Selesai', role: 'Pembayaran Lunas',      count: props.workflowCounts?.evaluasi ?? 0 },
+    { num: 1, name: 'Usulan',       role: 'Sarana & Umum',     count: props.workflowCounts?.usulan     ?? 0, href: '/usulan' },
+    { num: 2, name: 'Approval',     role: 'PPTK',              count: props.workflowCounts?.approval   ?? 0, href: '/approval' },
+    { num: 3, name: 'Pengadaan',    role: 'Pejabat Pengadaan', count: props.workflowCounts?.pengadaan  ?? 0, href: '/pengadaan?status=proses' },
+    { num: 4, name: 'Dokumen UPBJ', role: 'UPBJ',              count: props.workflowCounts?.dokumen    ?? 0, href: '/dokumen' },
+    { num: 5, name: 'Pembayaran',   role: 'Keuangan',          count: props.workflowCounts?.pembayaran ?? 0, href: '/pembayaran' },
+    { num: 6, name: 'Selesai',      role: 'Perencanaan',       count: props.workflowCounts?.evaluasi   ?? 0, href: '/pembayaran?status=lunas' },
 ]);
 
 const quickAction = computed(() => {
@@ -389,8 +389,12 @@ const metodeColor = (idx: number) => {
         >
             <div class="flex flex-col gap-2 lg:flex-row lg:items-stretch">
                 <template v-for="(stage, idx) in workflowStages" :key="stage.num">
-                    <div class="flex flex-1 flex-col gap-2 rounded-md border p-3 transition"
-                        :class="stage.count > 0 ? 'border-primary/30 bg-primary/5' : 'border-border bg-secondary/30'"
+                    <Link
+                        :href="stage.href"
+                        class="flex flex-1 flex-col gap-2 rounded-md border p-3 transition hover:shadow-sm"
+                        :class="stage.count > 0
+                            ? 'border-primary/30 bg-primary/5 hover:border-primary hover:bg-primary/10'
+                            : 'border-border bg-secondary/30 hover:border-muted-foreground/30'"
                     >
                         <div class="flex items-center gap-2">
                             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-sm font-semibold"
@@ -410,7 +414,7 @@ const metodeColor = (idx: number) => {
                         <div class="text-[10px] text-muted-foreground">
                             {{ stage.num <= 2 ? 'usulan' : 'paket' }}
                         </div>
-                    </div>
+                    </Link>
                     <div v-if="idx < workflowStages.length - 1" class="hidden items-center text-border lg:flex">→</div>
                 </template>
             </div>
