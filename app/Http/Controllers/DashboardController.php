@@ -310,6 +310,35 @@ class DashboardController extends Controller
                 ->count(),
         ];
 
+        // ── Realisasi per bulan ──────────────────────────────────────────
+        $namaBulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+        $realisasiBulanan = collect(range(1, 12))->map(function ($bulan) use (
+            $tahunAnggaran, $pembayaranQuery, $namaBulan
+        ) {
+            // Realisasi: pembayaran lunas — fallback ke created_at jika tanggal_bayar null
+            $nilaiRealisasi = (clone $pembayaranQuery)
+                ->where('status', 'lunas')
+                ->whereRaw('YEAR(COALESCE(tanggal_bayar, created_at)) = ?', [$tahunAnggaran])
+                ->whereRaw('MONTH(COALESCE(tanggal_bayar, created_at)) = ?', [$bulan])
+                ->sum('nilai_bayar');
+
+            // Komitmen: paket yang kontraknya ditandatangani bulan ini
+            $nilaiKomitmen = \App\Models\Pengadaan::query()
+                ->whereNotNull('tanggal_kontrak')
+                ->whereDoesntHave('pembayaran', fn ($q) => $q->where('status', 'lunas')) // ← exclude yg sudah lunas
+                ->whereRaw('YEAR(tanggal_kontrak) = ?', [$tahunAnggaran])
+                ->whereRaw('MONTH(tanggal_kontrak) = ?', [$bulan])
+                ->sum('nilai_kontrak');
+
+            return [
+                'bulan'     => $bulan,
+                'label'     => $namaBulan[$bulan - 1],
+                'realisasi' => (float) $nilaiRealisasi,
+                'komitmen'  => (float) $nilaiKomitmen,
+            ];
+        })->values()->toArray();
+
         return Inertia::render('Dashboard', [
             'stats'              => $stats,
             'recentUsulan'       => $recentUsulan,
@@ -320,6 +349,7 @@ class DashboardController extends Controller
             'roleData'           => ['role' => $user->role?->name ?? ''],
             'userRole'           => $user->role?->name ?? '',
             'tahunAnggaranAktif' => $tahunAnggaran,
+            'realisasiBulanan'   => $realisasiBulanan,
         ]);
     }
 }

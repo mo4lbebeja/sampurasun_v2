@@ -12,6 +12,7 @@ import Section from '@/components/ev/Section.vue';
 import StatusBadge from '@/components/ev/StatusBadge.vue';
 import EmptyState from '@/components/ev/EmptyState.vue';
 import PrimaryButton from '@/components/ev/PrimaryButton.vue';
+import RealisasiChart from '@/components/RealisasiChart.vue';
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Dashboard', href: dashboard() }] },
@@ -68,7 +69,7 @@ const props = withDefaults(
         metodeDistribution?: MetodeItem[];
         roleData?: RoleData;
         userRole?: string;
-        workflowCounts?: {          // ← tambahkan di sini, dalam defineProps
+        workflowCounts?: {
             usulan: number;
             approval: number;
             pengadaan: number;
@@ -76,6 +77,12 @@ const props = withDefaults(
             pembayaran: number;
             evaluasi: number;
         };
+        realisasiBulanan?: Array<{   // ← sejajar dengan workflowCounts, bukan di dalamnya
+            bulan:     number;
+            label:     string;
+            realisasi: number;
+            komitmen:  number;
+        }>;
     }>(),
     {
         stats: () => ({
@@ -86,20 +93,17 @@ const props = withDefaults(
             persen_realisasi: 0, persen_terpakai: 0,
             pembayaran_bulan_ini: 0,
         }),
-        recentUsulan: () => [],
-        statusDistribution: () => ({}),
-        activityFeed: () => [],
-        metodeDistribution: () => [],
-        roleData: () => ({ role: '' }),
-        userRole: '',
-        workflowCounts: () => ({    // ← tambahkan di sini, dalam objek defaults
-            usulan: 0,
-            approval: 0,
-            pengadaan: 0,
-            dokumen: 0,
-            pembayaran: 0,
-            evaluasi: 0,
+        recentUsulan:        () => [],
+        statusDistribution:  () => ({}),
+        activityFeed:        () => [],
+        metodeDistribution:  () => [],
+        roleData:            () => ({ role: '' }),
+        userRole:            '',
+        workflowCounts: () => ({
+            usulan: 0, approval: 0, pengadaan: 0,
+            dokumen: 0, pembayaran: 0, evaluasi: 0,
         }),
+        realisasiBulanan: () => [],  // ← sejajar dengan workflowCounts, bukan sebelum defineProps
     },
 );
 
@@ -190,6 +194,10 @@ const metodeWithPercent = computed(() =>
             ? Math.round((m.count / totalMetodeCount.value) * 100)
             : 0,
     })),
+);
+const tahunAnggaranAktif = computed(() =>
+    (page.props as Record<string, unknown>).tahunAnggaranAktif as number
+        ?? new Date().getFullYear()
 );
 
 const metodeColor = (idx: number) => {
@@ -593,6 +601,27 @@ const metodeColor = (idx: number) => {
                             </tbody>
                         </table>
                     </div>
+                </Section>
+
+                <!-- ── Grafik Realisasi Per Bulan ───────────────────────── -->
+                <Section
+                    title="Realisasi & Komitmen per Bulan"
+                    eyebrow="Grafik Anggaran"
+                    :description="`Tahun ${tahunAnggaranAktif} — klik bar untuk detail`"
+                >
+                    <template #actions>
+                        <Link href="/realisasi">
+                            <PrimaryButton variant="secondary" size="sm">
+                                <TrendingUp class="h-3.5 w-3.5" />
+                                Rekap Lengkap
+                            </PrimaryButton>
+                        </Link>
+                    </template>
+        
+                    <RealisasiChart
+                        :data="realisasiBulanan ?? []"
+                        :tahun="tahunAnggaranAktif ?? new Date().getFullYear()"
+                    />
                 </Section>
             </div>
 
