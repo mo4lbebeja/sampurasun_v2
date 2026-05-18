@@ -786,6 +786,17 @@ const bannerConfig = computed(() => {
                                 {{ pengadaan.usulan?.no_usulan }}
                             </Link>
                         </div>
+                            <!-- Tombol buat paket lain — tampil jika usulan masih dalam_pengadaan -->
+                            <div v-if="pengadaan.usulan?.status === 'dalam_pengadaan'
+                                    && (userRole === 'pejabat_pengadaan' || isAdmin)">
+                                <Link
+                                    :href="`/usulan/${pengadaan.usulan?.id}`"
+                                    class="inline-flex items-center gap-1.5 rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10"
+                                >
+                                    <Plus class="h-3.5 w-3.5" />
+                                    Buat Paket Lain
+                                </Link>
+                            </div>
                         <div>
                             <div class="text-eyebrow">Pemohon</div>
                             <div class="mt-0.5">{{ pengadaan.usulan?.pemohon?.name ?? '—' }}</div>

@@ -193,6 +193,13 @@ class PengadaanController extends Controller
  
             // Simpan assignment item
             if ($pakaiItemAssignment) {
+                // Hapus assignment lama dari paket yang sudah dibatalkan
+                // agar item bisa diassign ulang ke paket baru
+                \App\Models\PengadaanItemAssignment::query()
+                    ->whereIn('usulan_item_id', $itemIds)
+                    ->whereHas('pengadaan', fn ($q) => $q->where('status', 'batal'))
+                    ->delete();
+                    
                 $now = now();
                 $rows = array_map(fn ($id) => [
                     'pengadaan_id'   => $pengadaan->id,

@@ -276,10 +276,13 @@ class DashboardController extends Controller
                 ->count(),
 
             // Tahap 3: Pengadaan sedang diproses (negosiasi/proses)
-            'pengadaan' => Pengadaan::query()
-                ->where('status', 'proses')
-                ->whereHas('usulan.anggaran', $anggaranScope)
-                ->count(),
+            'pengadaan' => (clone $usulanQuery)
+                            ->where('status', 'disetujui')
+                            ->count()
+                        + Pengadaan::query()
+                            ->where('status', 'proses')
+                            ->whereYear('created_at', $tahunAnggaran)
+                            ->count(),
 
             // Tahap 4: Dokumen UPBJ — kontrak sudah, dokumen belum selesai
             'dokumen' => Pengadaan::query()

@@ -140,8 +140,7 @@ const itemsBelumDipaket = computed(() =>
 
 const canCreatePaket = computed(() =>
     (userRole.value === 'pejabat_pengadaan' || isAdmin.value) &&
-    (props.usulan.status === 'disetujui' ||
-        (props.usulan.status === 'dalam_pengadaan' && itemsBelumDipaket.value.length > 0))
+    (props.usulan.status === 'disetujui' || props.usulan.status === 'dalam_pengadaan')
 );
 
 const paketForm = useForm({
@@ -594,6 +593,16 @@ const stepStatus = (idx: number): 'done' | 'active' | 'pending' => {
                         <label class="text-eyebrow mb-1 block">Tanggal Mulai</label>
                         <input v-model="paketForm.tanggal_mulai" type="date" class="input w-full" />
                     </div>
+                </div>
+                
+                <!-- Peringatan jika semua item sudah dipaketkan -->
+                <div
+                    v-if="itemsBelumDipaket.length === 0 && assignedIds.length > 0"
+                    class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                >
+                    Semua item dari usulan ini sudah masuk ke paket sebelumnya.
+                    Paket baru ini bisa dibuat tanpa memilih item spesifik —
+                    misalnya untuk paket jasa atau pengadaan tambahan.
                 </div>
 
                 <!-- Pilih item -->
