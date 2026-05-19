@@ -146,8 +146,16 @@ const formatRelative = (val: string | null | undefined): string => {
 
 const activityFeedLimited = computed(() => props.activityFeed.slice(0, 6));
 
-const formatMetode = (val: string) =>
-    val.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+const formatMetode = (val: string): string => {
+    const map: Record<string, string> = {
+        pengadaan_langsung:  'Pengadaan Langsung',
+        penunjukan_langsung: 'Penunjukan Langsung',
+        tender:              'Tender',
+        e_purchasing:        'E-Purchasing',
+        belanja_langsung:    'Belanja Langsung',
+    };
+    return map[val] ?? val;
+};
 
 const workflowStages = computed(() => [
     { num: 1, name: 'Usulan',       role: 'Sarana & Umum',     count: props.workflowCounts?.usulan     ?? 0, href: '/usulan' },

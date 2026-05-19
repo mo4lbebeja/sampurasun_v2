@@ -130,6 +130,12 @@ class DashboardController extends Controller
         $totalTerpakai = (clone $anggaranQuery)->sum('terpakai');
         $totalSisa     = (clone $anggaranQuery)->sum('sisa');
 
+        $realisasiLangsungTotal = (float) \App\Models\BelanjaLangsung::query()
+            ->where('status', 'dibayar')
+            ->where('tahun_anggaran', $tahunAnggaran)
+            ->sum('nominal');
+        $totalRealisasi += $realisasiLangsungTotal;
+
         if ($totalTerpakai <= 0 && ($totalKomitmen > 0 || $totalRealisasi > 0)) {
             $totalTerpakai = $totalKomitmen + $totalRealisasi;
         }
@@ -140,7 +146,7 @@ class DashboardController extends Controller
 
         $persenRealisasi = $totalPagu > 0 ? round(($totalRealisasi / $totalPagu) * 100, 1) : 0;
         $persenTerpakai  = $totalPagu > 0 ? round(($totalTerpakai  / $totalPagu) * 100, 1) : 0;
-
+        
         $pembayaranBulanIni = (clone $pembayaranQuery)
             ->whereYear('created_at', $tahunAnggaran)
             ->whereMonth('created_at', now()->month)
@@ -256,6 +262,25 @@ class DashboardController extends Controller
             ])
             ->toArray();
 
+            // Tambahkan belanja langsung sebagai entri terpisah
+            $totalBelanjaLangsung = (float) \App\Models\BelanjaLangsung::query()
+                ->where('status', 'dibayar')
+                ->where('tahun_anggaran', $tahunAnggaran)
+                ->sum('nominal');
+
+            $jumlahBelanjaLangsung = (int) \App\Models\BelanjaLangsung::query()
+                ->where('status', 'dibayar')
+                ->where('tahun_anggaran', $tahunAnggaran)
+                ->count();
+
+            if ($jumlahBelanjaLangsung > 0) {
+                $metodeDistribution[] = [
+                    'metode'      => 'belanja_langsung',
+                    'count'       => $jumlahBelanjaLangsung,
+                    'total_nilai' => $totalBelanjaLangsung,
+                ];
+            }
+
         // Workflow counts per tahap — berdasarkan kondisi paket, bukan usulan.status
         $anggaranScope = function ($q) use ($tahunAnggaran) {
             $q->where('tahun', $tahunAnggaran)
@@ -276,13 +301,9 @@ class DashboardController extends Controller
                 ->count(),
 
             // Tahap 3: Pengadaan sedang diproses (negosiasi/proses)
-            'pengadaan' => (clone $usulanQuery)
-                            ->where('status', 'disetujui')
-                            ->count()
-                        + Pengadaan::query()
-                            ->where('status', 'proses')
-                            ->whereYear('created_at', $tahunAnggaran)
-                            ->count(),
+            'pengadaan' => (clone $usulanQuery)->where('status', 'disetujui')->count()
+                        + Pengadaan::query()->where('status', 'proses')
+                            ->whereYear('created_at', $tahunAnggaran)->count(),
 
             // Tahap 4: Dokumen UPBJ — kontrak sudah, dokumen belum selesai
             'dokumen' => Pengadaan::query()
@@ -319,36 +340,32 @@ class DashboardController extends Controller
         $realisasiBulanan = collect(range(1, 12))->map(function ($bulan) use (
             $tahunAnggaran, $pembayaranQuery, $namaBulan
         ) {
-            // Realisasi: pembayaran lunas — fallback ke created_at jika tanggal_bayar null
             $realisasiFormal = (clone $pembayaranQuery)
                 ->where('status', 'lunas')
                 ->whereRaw('YEAR(COALESCE(tanggal_bayar, created_at)) = ?', [$tahunAnggaran])
                 ->whereRaw('MONTH(COALESCE(tanggal_bayar, created_at)) = ?', [$bulan])
                 ->sum('nilai_bayar');
- 
+
             $realisasiLangsung = \App\Models\BelanjaLangsung::query()
                 ->where('status', 'dibayar')
                 ->where('tahun_anggaran', $tahunAnggaran)
                 ->whereRaw('MONTH(COALESCE(tanggal_dibayar, created_at)) = ?', [$bulan])
                 ->sum('nominal');
- 
-            $nilaiRealisasi = $realisasiFormal + $realisasiLangsung;
 
-            // Komitmen: paket yang kontraknya ditandatangani bulan ini
-            $nilaiKomitmen = \App\Models\Pengadaan::query()
+            $nilaiKomitmen = Pengadaan::query()
                 ->whereNotNull('tanggal_kontrak')
-                ->whereDoesntHave('pembayaran', fn ($q) => $q->where('status', 'lunas')) // ← exclude yg sudah lunas
                 ->whereRaw('YEAR(tanggal_kontrak) = ?', [$tahunAnggaran])
                 ->whereRaw('MONTH(tanggal_kontrak) = ?', [$bulan])
+                ->whereDoesntHave('pembayaran', fn ($q) => $q->where('status', 'lunas'))
                 ->sum('nilai_kontrak');
 
-                return [
-                    'bulan'             => $bulan,
-                    'label'             => $namaBulan[$bulan - 1],
-                    'realisasi'         => (float) $realisasiFormal,          // ← formal saja
-                    'realisasiLangsung' => (float) $realisasiLangsung,        // ← baru, terpisah
-                    'komitmen'          => (float) $nilaiKomitmen,
-                ];
+            return [
+                'bulan'             => $bulan,
+                'label'             => $namaBulan[$bulan - 1],
+                'realisasi'         => (float) $realisasiFormal,
+                'realisasiLangsung' => (float) $realisasiLangsung,
+                'komitmen'          => (float) $nilaiKomitmen,
+            ];
         })->values()->toArray();
 
         return Inertia::render('Dashboard', [
