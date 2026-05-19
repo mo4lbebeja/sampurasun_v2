@@ -24,6 +24,7 @@ class UpdatePembayaranRequest extends FormRequest
             'pajak_ppn'     => ['nullable', 'numeric', 'min:0'],
             'catatan'       => ['nullable', 'string', 'max:1000'],
             'bukti_bayar'   => ['nullable', 'file', 'mimes:pdf,jpg,png', 'max:5120'],
+            'file_spp' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
         ];
     }
 

@@ -189,7 +189,7 @@ class DokumenUpbjController extends Controller
             ]);
         }
  
-        $required = ['file_bast', 'file_invoice', 'file_faktur_pajak', 'file_kuitansi', 'file_spp'];
+        $required = ['file_bast', 'file_invoice', 'file_faktur_pajak', 'file_kuitansi'];
         $missing  = [];
  
         foreach ($required as $field) {

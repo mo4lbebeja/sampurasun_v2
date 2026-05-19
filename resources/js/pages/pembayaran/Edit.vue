@@ -66,6 +66,7 @@ type Pembayaran = {
     pajak_ppn: string;
     nilai_bersih: string;
     bukti_bayar: string | null;
+    file_spp: string | null;
     status: string;
     catatan: string | null;
 };
@@ -85,14 +86,21 @@ const form = useForm({
     pajak_ppn: Number(props.pembayaran.pajak_ppn) || 0,
     catatan: props.pembayaran.catatan ?? '',
     bukti_bayar: null as File | null,
+    file_spp: null as File | null,
 });
 
 const buktiName = ref<string>('');
+const sppName   = ref<string>('');
 
 const onBuktiChange = (e: Event) => {
     const file = (e.target as HTMLInputElement).files?.[0] ?? null;
     form.bukti_bayar = file;
     buktiName.value = file?.name ?? '';
+};
+const onSppChange = (e: Event) => {
+    const file = (e.target as HTMLInputElement).files?.[0] ?? null;
+    form.file_spp = file;
+    sppName.value = file?.name ?? '';
 };
 
 const submitDraft = () => {
@@ -102,12 +110,14 @@ const submitDraft = () => {
         onSuccess: () => {
             form.bukti_bayar = null;
             buktiName.value = '';
+            form.file_spp    = null;    // ← TAMBAHKAN
+            sppName.value    = '';      // ← TAMBAHKAN
         },
     });
 };
 
 // Form complete (terpisah)
-const completeForm = useForm({});
+const completeForm = useForm({ complete: '' });
 const completePembayaran = () => {
     if (!confirm('Yakin tandai pembayaran sebagai LUNAS?\n\nSetelah ini, pengadaan akan diteruskan ke Bagian Perencanaan untuk tahap evaluasi.')) return;
     completeForm.post(`/pembayaran/${props.pengadaan.id}/complete`, {
@@ -585,15 +595,47 @@ const missingFields = computed(() => {
                     </p>
                 </div>
 
+                <!-- Upload SPP -->
                 <div class="mt-4">
-                    <label class="mb-1.5 block text-sm font-semibold">Catatan</label>
-                    <textarea
-                        v-model="form.catatan"
-                        rows="2"
-                        placeholder="Catatan tambahan tentang pembayaran (opsional)"
-                        :disabled="isReadOnly"
-                        class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                    />
+                    <label class="mb-1.5 block text-sm font-semibold">
+                        Surat Permintaan Pembayaran (SPP)
+                    </label>
+
+                    <!-- File existing — sama persis dengan pola bukti_bayar -->
+                    <a
+                        v-if="pembayaran.file_spp"
+                        :href="`/storage/${pembayaran.file_spp}`"
+                        target="_blank"
+                        class="mb-2 flex items-center gap-2 rounded-md border border-border bg-card p-3 text-sm font-medium transition hover:border-primary hover:bg-muted/30"
+                    >
+                        <FileText class="h-4 w-4 text-primary" />
+                        <span>Lihat SPP yang sudah ter-upload</span>
+                        <span class="ml-auto text-xs text-muted-foreground">↗</span>
+                    </a>
+
+                    <!-- Upload field -->
+                    <label
+                        v-if="!isReadOnly"
+                        class="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border bg-background px-3 py-2.5 text-sm transition hover:border-primary hover:bg-muted/30"
+                    >
+                        <Upload class="h-4 w-4 text-muted-foreground" />
+                        <span class="flex-1 truncate text-muted-foreground">
+                            {{ sppName || (pembayaran.file_spp ? 'Ganti file...' : 'Pilih file SPP...') }}
+                        </span>
+                        <input
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            class="hidden"
+                            @change="onSppChange"
+                        />
+                    </label>
+
+                    <p v-if="form.errors['file_spp']" class="mt-1 text-xs text-destructive">
+                        {{ form.errors['file_spp'] }}
+                    </p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        Format: PDF atau DOC. Maksimal 5MB.
+                    </p>
                 </div>
             </Section>
 
@@ -601,12 +643,12 @@ const missingFields = computed(() => {
             <div v-if="!isReadOnly" class="space-y-3">
                 <!-- Error complete -->
                 <div
-                    v-if="completeForm.errors.complete"
+                    v-if="completeForm.errors['complete']"
                     class="flex items-start gap-3 rounded-md p-3 text-sm"
                     style="background-color: var(--color-brand-danger-bg); color: var(--color-brand-danger);"
                 >
                     <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>{{ completeForm.errors.complete }}</div>
+                    <div>{{ completeForm.errors['complete'] }}</div>
                 </div>
 
                 <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">

@@ -123,6 +123,15 @@ class PembayaranController extends Controller
             $data['bukti_bayar'] = $request->file('bukti_bayar')->store('pembayaran/bukti', 'public');
         }
 
+        // Handle SPP upload
+        if ($request->hasFile('file_spp')) {
+            if ($pembayaran->file_spp) {
+                Storage::disk('public')->delete($pembayaran->file_spp);
+            }
+            $data['file_spp'] = $request->file('file_spp')
+                ->store('pembayaran/spp', 'public');
+        }
+
         // Auto-calc nilai_bersih = nilai_bayar - PPh - PPN
         $nilaiBayar = (float) ($data['nilai_bayar'] ?? 0);
         $pph = (float) ($data['pajak_pph'] ?? 0);

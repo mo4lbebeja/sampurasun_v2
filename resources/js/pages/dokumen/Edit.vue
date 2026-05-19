@@ -106,14 +106,13 @@ const form = useForm({
     file_invoice: null as File | null,
     file_faktur_pajak: null as File | null,
     file_kuitansi: null as File | null,
-    file_spp: null as File | null,
 });
 
 // State untuk display nama file yang baru dipilih
 const selectedFileNames = ref<Record<string, string>>({});
 
 // Type untuk field file
-type FileField = 'file_bast' | 'file_invoice' | 'file_faktur_pajak' | 'file_kuitansi' | 'file_spp';
+type FileField = 'file_bast' | 'file_invoice' | 'file_faktur_pajak' | 'file_kuitansi';
 
 const onFileChange = (field: FileField, e: Event) => {
     const target = e.target as HTMLInputElement;
@@ -124,7 +123,6 @@ const onFileChange = (field: FileField, e: Event) => {
     else if (field === 'file_invoice') form.file_invoice = file;
     else if (field === 'file_faktur_pajak') form.file_faktur_pajak = file;
     else if (field === 'file_kuitansi') form.file_kuitansi = file;
-    else if (field === 'file_spp') form.file_spp = file;
 
     selectedFileNames.value[field] = file?.name ?? '';
 };
@@ -142,7 +140,6 @@ const submitDraft = () => {
             form.file_invoice = null;
             form.file_faktur_pajak = null;
             form.file_kuitansi = null;
-            form.file_spp = null;
             selectedFileNames.value = {};
         },
     });
@@ -231,13 +228,6 @@ const dokumenList = computed(() => [
         fullLabel: 'Kuitansi Pembayaran',
         accept: '.pdf,.jpg,.png',
         existing: props.dokumen.file_kuitansi,
-    },
-    {
-        field: 'file_spp' as FileField,
-        label: 'SPP',
-        fullLabel: 'Surat Permintaan Pembayaran',
-        accept: '.pdf,.doc,.docx',
-        existing: props.dokumen.file_spp,
     },
 ]);
 
@@ -541,12 +531,12 @@ const canComplete = computed(() => allUploaded.value && !!generatedBastNumber.va
                     <div v-if="!dokumen.is_complete" class="space-y-3">
                         <!-- Error message kalau gagal complete -->
                         <div
-                            v-if="completeForm.errors.complete"
+                            v-if="completeForm.errors['complete']"
                             class="flex items-start gap-3 rounded-md p-3 text-sm"
                             style="background-color: var(--color-brand-danger-bg); color: var(--color-brand-danger);"
                         >
                             <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
-                            <div>{{ completeForm.errors.complete }}</div>
+                            <div>{{ completeForm.errors['complete'] }}</div>
                         </div>
 
                         <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">

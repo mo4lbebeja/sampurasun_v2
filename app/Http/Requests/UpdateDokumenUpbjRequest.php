@@ -23,7 +23,6 @@ class UpdateDokumenUpbjRequest extends FormRequest
             'file_invoice'      => ['nullable', 'file', 'mimes:pdf,jpg,png', 'max:5120'],
             'file_faktur_pajak' => ['nullable', 'file', 'mimes:pdf,jpg,png', 'max:5120'],
             'file_kuitansi'     => ['nullable', 'file', 'mimes:pdf,jpg,png', 'max:5120'],
-            'file_spp'          => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
         ];
     }
 
@@ -44,7 +43,6 @@ class UpdateDokumenUpbjRequest extends FormRequest
             'file_invoice'      => 'file invoice',
             'file_faktur_pajak' => 'file faktur pajak',
             'file_kuitansi'     => 'file kuitansi',
-            'file_spp'          => 'file SPP',
         ];
     }
 }
