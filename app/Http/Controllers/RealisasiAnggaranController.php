@@ -103,28 +103,28 @@ class RealisasiAnggaranController extends Controller
  
         $anggaranList = $query->paginate(20)->withQueryString();
 
-        // Fetch belanja langsung per anggaran
-        $belanjaLangsungTotal = \App\Models\BelanjaLangsung::query()
+        // Konversi ke array dulu agar modifikasi pasti terbaca Vue
+        $belanjaLangsungMap = \App\Models\BelanjaLangsung::query()
             ->where('status', 'dibayar')
-            ->whereIn('anggaran_id', $anggaranList->pluck('id'))
+            ->whereIn('anggaran_id', $anggaranList->pluck('id')->toArray())
             ->selectRaw('anggaran_id, SUM(nominal) as total')
             ->groupBy('anggaran_id')
             ->pluck('total', 'anggaran_id');
 
-        // Tambahkan ke setiap row dengan setAttribute agar terbaca saat serialisasi
-        $anggaranList->getCollection()->each(function ($row) use ($belanjaLangsungTotal) {
-            $tambahan = (float) ($belanjaLangsungTotal[$row->id] ?? 0);
-            $row->setAttribute('realisasi',
-                (float) $row->getAttribute('realisasi') + $tambahan
-            );
-        });
-        
-        // Stats keseluruhan (sama persis dengan sebelumnya)
+        // Ubah ke array lalu inject nilai belanja langsung
+        $anggaranArray = $anggaranList->toArray();
+        $anggaranArray['data'] = array_map(function ($row) use ($belanjaLangsungMap) {
+            $tambahan = (float) ($belanjaLangsungMap[$row['id']] ?? 0);
+            $row['realisasi'] = (float) ($row['realisasi'] ?? 0) + $tambahan;
+            return $row;
+        }, $anggaranArray['data']);
+
+        // Stats
         $statsQuery = clone $query;
         $statsQuery->getQuery()->orders = [];
         $statsQuery->getQuery()->limit  = null;
         $statsQuery->getQuery()->offset = null;
- 
+
         $statsRow = DB::table(DB::raw("({$statsQuery->toBase()->toSql()}) as agg"))
             ->mergeBindings($statsQuery->toBase())
             ->selectRaw('
@@ -133,20 +133,18 @@ class RealisasiAnggaranController extends Controller
                 COALESCE(SUM(realisasi), 0) as total_realisasi
             ')
             ->first();
- 
-        $totalPagu      = (float) ($statsRow->total_pagu ?? 0);
-        $totalKomitmen  = (float) ($statsRow->total_komitmen ?? 0);
+
+        $totalPagu      = (float) ($statsRow->total_pagu      ?? 0);
+        $totalKomitmen  = (float) ($statsRow->total_komitmen  ?? 0);
         $totalRealisasi = (float) ($statsRow->total_realisasi ?? 0);
 
-        // Tambahkan belanja langsung ke total realisasi
-        $totalBelanjaLangsung = \App\Models\BelanjaLangsung::query()
+        $totalRealisasi += (float) \App\Models\BelanjaLangsung::query()
             ->where('status', 'dibayar')
-            ->where('tahun_anggaran', $tahunAnggaran)  // ← pakai tahun, bukan pluck id
+            ->where('tahun_anggaran', $tahunAnggaran)
             ->sum('nominal');
 
-        $totalRealisasi += (float) $totalBelanjaLangsung;
-        $totalTerpakai   = $totalKomitmen + $totalRealisasi;  // ← tetap ada, tapi setelah update
- 
+        $totalTerpakai = $totalKomitmen + $totalRealisasi;
+
         $stats = [
             'total_pagu'       => $totalPagu,
             'total_komitmen'   => $totalKomitmen,
@@ -154,13 +152,13 @@ class RealisasiAnggaranController extends Controller
             'total_terpakai'   => $totalTerpakai,
             'total_sisa'       => $totalPagu - $totalTerpakai,
             'persen_terpakai'  => $totalPagu > 0
-                ? round(($totalTerpakai / $totalPagu) * 100, 1) : 0,
+                ? round(($totalTerpakai  / $totalPagu) * 100, 1) : 0,
             'persen_realisasi' => $totalPagu > 0
                 ? round(($totalRealisasi / $totalPagu) * 100, 1) : 0,
         ];
- 
+
         return Inertia::render('realisasi/Index', [
-            'anggaran'     => $anggaranList,
+            'anggaran'     => $anggaranArray,   // ← array, bukan $anggaranList
             'stats'        => $stats,
             'tahunOptions' => collect([$tahunAnggaran]),
             'filters'      => [
