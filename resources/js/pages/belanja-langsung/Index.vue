@@ -19,6 +19,7 @@ type Belanja = {
     nominal: string;
     status: string;
     catatan_penolakan: string | null;
+    file_nota: string | null; 
     pembelanja: { id: number; name: string } | null;
     anggaran: { id: number; kode_rekening: string; nama_rekening: string } | null;
     approver: { id: number; name: string } | null;

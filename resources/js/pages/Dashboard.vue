@@ -81,6 +81,7 @@ const props = withDefaults(
             bulan:     number;
             label:     string;
             realisasi: number;
+            realisasiLangsung:  number;
             komitmen:  number;
         }>;
     }>(),
