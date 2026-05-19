@@ -31,7 +31,21 @@ Route::middleware(['auth', 'verified', 'tahun.anggaran'])->group(function () {
     Route::post('/notifikasi/read-all', [NotificationController::class, 'markAllRead'])->name('notifikasi.read-all');
     Route::get('/notifikasi',           [NotificationController::class, 'index'])->name('notifikasi.index');
     Route::post('/notifikasi/{id}/read',[NotificationController::class, 'markRead'])->name('notifikasi.read');
-    
+
+    // Belanja Langsung & Reimburse
+    Route::prefix('belanja-langsung')->name('belanja-langsung.')->group(function () {
+        Route::get('/',                                  [\App\Http\Controllers\BelanjaLangsungController::class, 'index'])  ->name('index');
+        Route::get('/create',                            [\App\Http\Controllers\BelanjaLangsungController::class, 'create']) ->name('create');
+        Route::post('/',                                 [\App\Http\Controllers\BelanjaLangsungController::class, 'store'])  ->name('store');
+        Route::get('/{belanjaLangsung}/edit',            [\App\Http\Controllers\BelanjaLangsungController::class, 'edit'])   ->name('edit');
+        Route::put('/{belanjaLangsung}',                 [\App\Http\Controllers\BelanjaLangsungController::class, 'update']) ->name('update');
+        Route::delete('/{belanjaLangsung}',              [\App\Http\Controllers\BelanjaLangsungController::class, 'destroy'])->name('destroy');
+        Route::post('/{belanjaLangsung}/ajukan',         [\App\Http\Controllers\BelanjaLangsungController::class, 'ajukan']) ->name('ajukan');
+        Route::post('/{belanjaLangsung}/approve',        [\App\Http\Controllers\BelanjaLangsungController::class, 'approve'])->name('approve');
+        Route::post('/{belanjaLangsung}/reject',         [\App\Http\Controllers\BelanjaLangsungController::class, 'reject']) ->name('reject');
+        Route::post('/{belanjaLangsung}/bayar',          [\App\Http\Controllers\BelanjaLangsungController::class, 'bayar'])  ->name('bayar');
+    });
+
     // Custom routes untuk usulan HARUS sebelum Route::resource
     Route::post('/usulan/{usulan}/decide', [ApprovalController::class, 'decide'])
         ->name('usulan.decide');
@@ -125,19 +139,6 @@ Route::middleware(['auth', 'verified', 'tahun.anggaran'])->group(function () {
     Route::resource('sub-kegiatan', SubKegiatanController::class);
     Route::resource('users', UserController::class);
 
-    // Belanja Langsung & Reimburse
-    Route::prefix('belanja-langsung')->name('belanja-langsung.')->group(function () {
-        Route::get('/',                          [BelanjaLangsungController::class, 'index'])  ->name('index');
-        Route::get('/create',                    [BelanjaLangsungController::class, 'create']) ->name('create');
-        Route::post('/',                         [BelanjaLangsungController::class, 'store'])  ->name('store');
-        Route::get('/{belanjaLangsung}/edit',    [BelanjaLangsungController::class, 'edit'])   ->name('edit');
-        Route::put('/{belanjaLangsung}',         [BelanjaLangsungController::class, 'update']) ->name('update');
-        Route::delete('/{belanjaLangsung}',      [BelanjaLangsungController::class, 'destroy'])->name('destroy');
-        Route::post('/{belanjaLangsung}/ajukan', [BelanjaLangsungController::class, 'ajukan']) ->name('ajukan');
-        Route::post('/{belanjaLangsung}/approve',[BelanjaLangsungController::class, 'approve'])->name('approve');
-        Route::post('/{belanjaLangsung}/reject', [BelanjaLangsungController::class, 'reject']) ->name('reject');
-        Route::post('/{belanjaLangsung}/bayar',  [BelanjaLangsungController::class, 'bayar'])  ->name('bayar');
-    });
 });
 
 require __DIR__.'/settings.php';

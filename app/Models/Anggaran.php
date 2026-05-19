@@ -36,43 +36,36 @@ class Anggaran extends Model
      */
     public function recompute(): void
     {
-        // Komitmen: pengadaan yang sudah kontrak (status='kontrak')
-        // Filter via relasi usulan -> anggaran_id
+        // Komitmen: pengadaan yang sudah kontrak
         $komitmen = \App\Models\Pengadaan::query()
             ->where('status', 'kontrak')
             ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_kontrak');
-
-        // Realisasi: pembayaran yang sudah lunas
-        // Realisasi formal: pembayaran lunas
+ 
+        // Realisasi formal: pembayaran yang sudah lunas
         $realisasiFormal = \App\Models\Pembayaran::query()
             ->where('status', 'lunas')
             ->whereHas('pengadaan.usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_bayar');
-
+ 
         // Realisasi langsung: belanja langsung yang sudah dibayar
         $realisasiLangsung = \App\Models\BelanjaLangsung::query()
             ->where('status', 'dibayar')
             ->where('anggaran_id', $this->id)
             ->sum('nominal');
-
+ 
         $realisasi = $realisasiFormal + $realisasiLangsung;
-
-        // Total terpakai = komitmen + realisasi
-        // Catatan: ini bisa double-count kalau pengadaan SAMA punya kontrak DAN pembayaran lunas.
-        // Solusi: kurangi nilai kontrak yang sudah di-realisasi
+ 
+        // Kurangi kontrak yang sudah di-realisasi (avoid double count)
         $kontrakSudahLunas = \App\Models\Pengadaan::query()
             ->where('status', 'kontrak')
             ->whereHas('pembayaran', fn ($q) => $q->where('status', 'lunas'))
             ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_kontrak');
-
+ 
         $terpakai = $komitmen + $realisasi - $kontrakSudahLunas;
-
-        // Simpan tanpa trigger event (avoid infinite loop kalau ada observer di Anggaran)
+ 
         $this->updateQuietly(['terpakai' => $terpakai]);
-
-        // Catatan: 'sisa' adalah generated column, otomatis ter-update di DB
     }
 
     /**

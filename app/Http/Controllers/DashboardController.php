@@ -325,13 +325,13 @@ class DashboardController extends Controller
                 ->whereRaw('YEAR(COALESCE(tanggal_bayar, created_at)) = ?', [$tahunAnggaran])
                 ->whereRaw('MONTH(COALESCE(tanggal_bayar, created_at)) = ?', [$bulan])
                 ->sum('nilai_bayar');
-
+ 
             $realisasiLangsung = \App\Models\BelanjaLangsung::query()
                 ->where('status', 'dibayar')
                 ->where('tahun_anggaran', $tahunAnggaran)
                 ->whereRaw('MONTH(COALESCE(tanggal_dibayar, created_at)) = ?', [$bulan])
                 ->sum('nominal');
-
+ 
             $nilaiRealisasi = $realisasiFormal + $realisasiLangsung;
 
             // Komitmen: paket yang kontraknya ditandatangani bulan ini

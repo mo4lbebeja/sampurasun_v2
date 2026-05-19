@@ -5,9 +5,18 @@ namespace App\Observers;
 use App\Models\Anggaran;
 use App\Models\BelanjaLangsung;
 
+/**
+ * File: app/Observers/BelanjaLangsungObserver.php
+ *
+ * Memicu recompute anggaran setiap kali status belanja langsung
+ * berubah ke/dari 'dibayar'.
+ */
 class BelanjaLangsungObserver
 {
-    // Saat DIBUAT langsung dengan status dibayar (keuangan input langsung)
+    /**
+     * Saat DIBUAT langsung dengan status 'dibayar'
+     * (keuangan input langsung nominal < threshold)
+     */
     public function created(BelanjaLangsung $belanja): void
     {
         if ($belanja->status === 'dibayar') {
@@ -15,7 +24,9 @@ class BelanjaLangsungObserver
         }
     }
 
-    // Saat STATUS BERUBAH ke/dari dibayar
+    /**
+     * Saat status BERUBAH — misalnya dari disetujui → dibayar
+     */
     public function updated(BelanjaLangsung $belanja): void
     {
         if (! $belanja->wasChanged('status')) {
@@ -30,7 +41,9 @@ class BelanjaLangsungObserver
         }
     }
 
-    // Saat DIHAPUS dan sudah dibayar
+    /**
+     * Saat DIHAPUS dan sudah berstatus dibayar
+     */
     public function deleted(BelanjaLangsung $belanja): void
     {
         if ($belanja->status === 'dibayar') {
