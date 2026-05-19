@@ -36,19 +36,16 @@ class Anggaran extends Model
      */
     public function recompute(): void
     {
-        // Komitmen: pengadaan yang sudah kontrak
         $komitmen = \App\Models\Pengadaan::query()
             ->where('status', 'kontrak')
             ->whereHas('usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_kontrak');
  
-        // Realisasi formal: pembayaran yang sudah lunas
         $realisasiFormal = \App\Models\Pembayaran::query()
             ->where('status', 'lunas')
             ->whereHas('pengadaan.usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_bayar');
  
-        // Realisasi langsung: belanja langsung yang sudah dibayar
         $realisasiLangsung = \App\Models\BelanjaLangsung::query()
             ->where('status', 'dibayar')
             ->where('anggaran_id', $this->id)
@@ -56,7 +53,6 @@ class Anggaran extends Model
  
         $realisasi = $realisasiFormal + $realisasiLangsung;
  
-        // Kurangi kontrak yang sudah di-realisasi (avoid double count)
         $kontrakSudahLunas = \App\Models\Pengadaan::query()
             ->where('status', 'kontrak')
             ->whereHas('pembayaran', fn ($q) => $q->where('status', 'lunas'))

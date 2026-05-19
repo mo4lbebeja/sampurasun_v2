@@ -204,20 +204,22 @@ class BelanjaLangsungController extends Controller
     public function edit(Request $request, BelanjaLangsung $belanjaLangsung): Response|RedirectResponse
     {
         $user = $request->user();
-
+ 
         if (! $user->isAdmin() && $belanjaLangsung->pembelanja_id !== $user->id) {
             abort(403);
         }
-
+ 
         if (! in_array($belanjaLangsung->status, ['draft', 'ditolak'])) {
             return redirect()
                 ->route('belanja-langsung.index')
-                ->with('error', 'Nota ini tidak bisa diedit pada status saat ini.');
+                ->with('error', 'Nota ini tidak dapat diedit pada status ' . $belanjaLangsung->status . '.');
         }
-
-        $tahun = (int) $request->session()->get('tahun_anggaran');
-
-        $anggaranList = Anggaran::query()
+ 
+        $tahun      = (int) $request->session()->get('tahun_anggaran');
+        $roleName   = $user->role?->name ?? '';
+        $isKeuangan = in_array($roleName, ['keuangan', 'admin']);
+ 
+        $anggaranList = \App\Models\Anggaran::query()
             ->where('is_active', true)
             ->where(fn ($q) => $q
                 ->where('tahun', $tahun)
@@ -229,56 +231,14 @@ class BelanjaLangsungController extends Controller
             ->select('id', 'kode_rekening', 'nama_rekening', 'pagu', 'sisa')
             ->orderBy('kode_rekening')
             ->get();
-
+ 
         return Inertia::render('belanja-langsung/Edit', [
             'belanja'      => $belanjaLangsung,
             'anggaranList' => $anggaranList,
-            'jenisOptions' => BelanjaLangsung::$jenisLabel,
+            'jenisOptions' => \App\Models\BelanjaLangsung::$jenisLabel,
+            'isKeuangan'   => $isKeuangan,
+            'threshold'    => (float) (\App\Models\AppSetting::getValue('threshold_reimburse') ?? 1000000),
         ]);
-    }
-
-    // ── Update ─────────────────────────────────────────────────────
-
-    public function update(Request $request, BelanjaLangsung $belanjaLangsung): RedirectResponse
-    {
-        $user = $request->user();
-
-        if (! $user->isAdmin() && $belanjaLangsung->pembelanja_id !== $user->id) {
-            abort(403);
-        }
-
-        if (! in_array($belanjaLangsung->status, ['draft', 'ditolak'])) {
-            return back()->with('error', 'Nota tidak bisa diubah pada status ini.');
-        }
-
-        $validated = $request->validate([
-            'anggaran_id'     => ['required', 'exists:anggaran,id'],
-            'no_nota'         => ['nullable', 'string', 'max:100'],
-            'tanggal_belanja' => ['required', 'date'],
-            'uraian'          => ['required', 'string', 'max:1000'],
-            'jenis'           => ['required', 'in:atk,konsumsi,transport,materai,fotokopi,kebersihan,lainnya'],
-            'nominal'         => ['required', 'numeric', 'min:100'],
-            'catatan'         => ['nullable', 'string', 'max:500'],
-            'file_nota'       => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'langsung_ajukan' => ['nullable', 'boolean'],
-        ]);
-
-        $data = collect($validated)->except(['file_nota', 'langsung_ajukan'])->toArray();
-        $data['status'] = $validated['langsung_ajukan'] ? 'diajukan' : 'draft';
-
-        if ($request->hasFile('file_nota')) {
-            if ($belanjaLangsung->file_nota) {
-                Storage::disk('public')->delete($belanjaLangsung->file_nota);
-            }
-            $data['file_nota'] = $request->file('file_nota')
-                ->store('belanja-langsung/nota', 'public');
-        }
-
-        $belanjaLangsung->update($data);
-
-        return redirect()
-            ->route('belanja-langsung.index')
-            ->with('success', 'Nota berhasil diperbarui.');
     }
 
     // ── Ajukan ─────────────────────────────────────────────────────

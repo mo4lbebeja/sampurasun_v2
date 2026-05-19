@@ -342,12 +342,13 @@ class DashboardController extends Controller
                 ->whereRaw('MONTH(tanggal_kontrak) = ?', [$bulan])
                 ->sum('nilai_kontrak');
 
-            return [
-                'bulan'     => $bulan,
-                'label'     => $namaBulan[$bulan - 1],
-                'realisasi' => (float) $nilaiRealisasi,
-                'komitmen'  => (float) $nilaiKomitmen,
-            ];
+                return [
+                    'bulan'             => $bulan,
+                    'label'             => $namaBulan[$bulan - 1],
+                    'realisasi'         => (float) $realisasiFormal,          // ← formal saja
+                    'realisasiLangsung' => (float) $realisasiLangsung,        // ← baru, terpisah
+                    'komitmen'          => (float) $nilaiKomitmen,
+                ];
         })->values()->toArray();
 
         return Inertia::render('Dashboard', [

@@ -580,6 +580,44 @@ const pengadaanStatusLabel = (s: string) => {
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- Belanja Langsung untuk pos anggaran ini -->
+                                    <div v-if="detailData[row.id]?.belanja_langsung?.length > 0" class="mt-4">
+                                        <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Belanja Langsung ({{ detailData[row.id].belanja_langsung.length }} nota)
+                                        </div>
+                                        <table class="w-full text-xs">
+                                            <thead>
+                                                <tr class="border-b border-border text-left text-muted-foreground">
+                                                    <th class="py-1.5 pr-3">Uraian</th>
+                                                    <th class="py-1.5 pr-3">Jenis</th>
+                                                    <th class="py-1.5 pr-3">Pembelanja</th>
+                                                    <th class="py-1.5 pr-3">Tanggal</th>
+                                                    <th class="py-1.5 text-right">Nominal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-border">
+                                                <tr v-for="bl in detailData[row.id].belanja_langsung" :key="bl.id"
+                                                    class="hover:bg-muted/10">
+                                                    <td class="py-1.5 pr-3">{{ bl.uraian }}</td>
+                                                    <td class="py-1.5 pr-3">
+                                                        <span class="rounded-full bg-secondary px-2 py-0.5 text-[10px]">
+                                                            {{ bl.jenis_label }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="py-1.5 pr-3 text-muted-foreground">{{ bl.pembelanja }}</td>
+                                                    <td class="py-1.5 pr-3 text-muted-foreground">
+                                                        {{ bl.tanggal_dibayar
+                                                            ? new Date(bl.tanggal_dibayar).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })
+                                                            : '—' }}
+                                                    </td>
+                                                    <td class="py-1.5 text-right font-mono font-semibold">
+                                                        {{ new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', minimumFractionDigits:0 }).format(bl.nominal) }}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </td>
                             </tr>
                         </template>
