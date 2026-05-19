@@ -44,10 +44,19 @@ class Anggaran extends Model
             ->sum('nilai_kontrak');
 
         // Realisasi: pembayaran yang sudah lunas
-        $realisasi = \App\Models\Pembayaran::query()
+        // Realisasi formal: pembayaran lunas
+        $realisasiFormal = \App\Models\Pembayaran::query()
             ->where('status', 'lunas')
             ->whereHas('pengadaan.usulan', fn ($q) => $q->where('anggaran_id', $this->id))
             ->sum('nilai_bayar');
+
+        // Realisasi langsung: belanja langsung yang sudah dibayar
+        $realisasiLangsung = \App\Models\BelanjaLangsung::query()
+            ->where('status', 'dibayar')
+            ->where('anggaran_id', $this->id)
+            ->sum('nominal');
+
+        $realisasi = $realisasiFormal + $realisasiLangsung;
 
         // Total terpakai = komitmen + realisasi
         // Catatan: ini bisa double-count kalau pengadaan SAMA punya kontrak DAN pembayaran lunas.

@@ -320,11 +320,19 @@ class DashboardController extends Controller
             $tahunAnggaran, $pembayaranQuery, $namaBulan
         ) {
             // Realisasi: pembayaran lunas — fallback ke created_at jika tanggal_bayar null
-            $nilaiRealisasi = (clone $pembayaranQuery)
+            $realisasiFormal = (clone $pembayaranQuery)
                 ->where('status', 'lunas')
                 ->whereRaw('YEAR(COALESCE(tanggal_bayar, created_at)) = ?', [$tahunAnggaran])
                 ->whereRaw('MONTH(COALESCE(tanggal_bayar, created_at)) = ?', [$bulan])
                 ->sum('nilai_bayar');
+
+            $realisasiLangsung = \App\Models\BelanjaLangsung::query()
+                ->where('status', 'dibayar')
+                ->where('tahun_anggaran', $tahunAnggaran)
+                ->whereRaw('MONTH(COALESCE(tanggal_dibayar, created_at)) = ?', [$bulan])
+                ->sum('nominal');
+
+            $nilaiRealisasi = $realisasiFormal + $realisasiLangsung;
 
             // Komitmen: paket yang kontraknya ditandatangani bulan ini
             $nilaiKomitmen = \App\Models\Pengadaan::query()

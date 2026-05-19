@@ -32,4 +32,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('settings/kop-surat', [LetterheadSettingController::class, 'update'])
         ->name('settings.kop-surat.update');
+
+    Route::post('settings/threshold', [\App\Http\Controllers\Settings\LetterheadSettingController::class, 'updateThreshold'])
+        ->name('settings.threshold.update');
 });

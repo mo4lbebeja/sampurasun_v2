@@ -97,6 +97,13 @@ const procurementNavItems: RoleNavItem[] = [
         roles: ['keuangan'],
     },
     {
+        title: 'Belanja Langsung',
+        href:  '/belanja-langsung',
+        icon:  Wallet,
+        // Tampil untuk semua role yang terlibat:
+        // sarana_umum (input), pptk (approve), keuangan (bayar), admin
+    },
+    {
         title: 'Evaluasi',
         href: '/evaluasi',
         icon: Star,

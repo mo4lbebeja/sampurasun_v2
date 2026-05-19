@@ -23,10 +23,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->configureDefaults();
-    
+        // Observer yang sudah ada:
         \App\Models\Pengadaan::observe(\App\Observers\PengadaanObserver::class);
         \App\Models\Pembayaran::observe(\App\Observers\PembayaranObserver::class);
+
+        // Tambahkan ini:
+        \App\Models\BelanjaLangsung::observe(\App\Observers\BelanjaLangsungObserver::class);
     }
 
     /**

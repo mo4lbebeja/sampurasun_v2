@@ -17,6 +17,7 @@ use App\Http\Controllers\DpaAnggaranController;
 use App\Http\Controllers\SubKegiatanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\BelanjaLangsungController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -123,6 +124,20 @@ Route::middleware(['auth', 'verified', 'tahun.anggaran'])->group(function () {
     Route::resource('dpa-anggaran', DpaAnggaranController::class);
     Route::resource('sub-kegiatan', SubKegiatanController::class);
     Route::resource('users', UserController::class);
+
+    // Belanja Langsung & Reimburse
+    Route::prefix('belanja-langsung')->name('belanja-langsung.')->group(function () {
+        Route::get('/',                          [BelanjaLangsungController::class, 'index'])  ->name('index');
+        Route::get('/create',                    [BelanjaLangsungController::class, 'create']) ->name('create');
+        Route::post('/',                         [BelanjaLangsungController::class, 'store'])  ->name('store');
+        Route::get('/{belanjaLangsung}/edit',    [BelanjaLangsungController::class, 'edit'])   ->name('edit');
+        Route::put('/{belanjaLangsung}',         [BelanjaLangsungController::class, 'update']) ->name('update');
+        Route::delete('/{belanjaLangsung}',      [BelanjaLangsungController::class, 'destroy'])->name('destroy');
+        Route::post('/{belanjaLangsung}/ajukan', [BelanjaLangsungController::class, 'ajukan']) ->name('ajukan');
+        Route::post('/{belanjaLangsung}/approve',[BelanjaLangsungController::class, 'approve'])->name('approve');
+        Route::post('/{belanjaLangsung}/reject', [BelanjaLangsungController::class, 'reject']) ->name('reject');
+        Route::post('/{belanjaLangsung}/bayar',  [BelanjaLangsungController::class, 'bayar'])  ->name('bayar');
+    });
 });
 
 require __DIR__.'/settings.php';
